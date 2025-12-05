@@ -1,11 +1,32 @@
 import React, { useState, useRef } from 'react';
 import { generateAICopywriting } from '../services/geminiAICopywriter';
 import { prepareImageForReplacement, batchShoeReplacement } from '../services/shoeReplacementService';
+import { batchRemoveBackground } from '../services/backgroundRemovalService';
 import ModelChapterPanel from './ModelChapterPanel';
 import ProductEnhancementPanel from './ProductEnhancementPanel';
 import ContentGeneratorPanel from './ContentGeneratorPanel';
 import { TextElement } from './PreviewRenderer';
 import { FieldToggleControl } from './FieldToggleControl';
+
+// 선 요소 타입
+export interface LineElement {
+    id: string;
+    sectionId: string;
+    type: 'straight' | 'curved' | 'angled';
+    strokeWidth: number;
+    strokeColor: string;
+    lineCap: 'round' | 'square' | 'butt';
+    lineEnd: 'none' | 'arrow';
+}
+
+// 그리드 섹션 타입
+export interface GridSection {
+    id: string;
+    cols: number;
+    rows: number;
+    height: number;
+    cells: (string | null)[];
+}
 
 interface AdjustmentPanelProps {
     data: any;
@@ -20,20 +41,24 @@ interface AdjustmentPanelProps {
     onDeleteTextElement?: (id: string) => void;
     onAddSpacerSection?: () => void;
     onAddSectionWithImage?: (imageUrl: string, sectionName?: string) => void;
+    lineElements?: LineElement[];
+    onAddLineElement?: (line: LineElement) => void;
+    onDeleteLineElement?: (id: string) => void;
+    onAddGridSection?: (grid: GridSection) => void;
 }
 
 type Section = 'hero' | 'products' | 'models' | 'contents' | 'closeup';
 
 const HERO_FIELDS = [
-    { id: 'brandLine', label: '브랜드/라인명', defaultSize: 12, aiHint: '🤖 AI가 브랜드/라인명을 추론합니다' },
-    { id: 'productName', label: '제품명', defaultSize: 32, aiHint: '🤖 AI가 제품명을 생성합니다' },
-    { id: 'subName', label: '서브네임', defaultSize: 18, aiHint: '🤖 AI가 서브네임을 완성합니다' },
-    { id: 'stylingMatch', label: '룩/매칭 정보', defaultSize: 14, aiHint: '🤖 AI가 매칭 정보를 작성합니다', multiline: true },
-    { id: 'craftsmanship', label: '제작/소재 정보', defaultSize: 14, aiHint: '🤖 AI가 소재 설명을 생성합니다', multiline: true },
-    { id: 'technology', label: '⚙️ 테크놀로지', defaultSize: 14, aiHint: '🤖 AI가 기술 정보를 추천합니다' },
-    { id: 'productSpec', label: '📋 Product Spec', defaultSize: 13, isSpec: true },
-    { id: 'heightSpec', label: '👟 키높이 스펙', defaultSize: 16, isHeightSpec: true },
-    { id: 'sizeGuide', label: '📏 사이즈 가이드', defaultSize: 14, aiHint: '🤖 AI가 사이즈 가이드를 작성합니다', multiline: true },
+    { id: 'brandLine', label: 'Brand / Line', labelKo: '브랜드 / 라인', defaultSize: 12 },
+    { id: 'productName', label: 'Product Name', labelKo: '상품명', defaultSize: 32 },
+    { id: 'subName', label: 'Sub Name', labelKo: '서브명', defaultSize: 18 },
+    { id: 'stylingMatch', label: 'Styling Match', labelKo: '스타일링', defaultSize: 14, multiline: true },
+    { id: 'craftsmanship', label: 'Craftsmanship', labelKo: '제작 공정', defaultSize: 14, multiline: true },
+    { id: 'technology', label: 'Technology', labelKo: '테크놀로지', defaultSize: 14 },
+    { id: 'productSpec', label: 'Product Spec', labelKo: '제품 스펙', defaultSize: 13, isSpec: true },
+    { id: 'heightSpec', label: 'Height Spec', labelKo: '키높이 스펙', defaultSize: 16, isHeightSpec: true },
+    { id: 'sizeGuide', label: 'Size Guide', labelKo: '사이즈 가이드', defaultSize: 14, multiline: true },
 ];
 
 const DEFAULT_FIELD_SETTINGS: Record<string, { visible: boolean; fontSize: number }> = {};
@@ -61,21 +86,34 @@ const generateStandaloneHeroHTML = (data: any): string => {
         }
     };
     const fieldsHtml = order.map((id: string) => renderField(id)).filter(Boolean).join('\n    ');
-    return `<!-- 상품 상세 설명 HTML - 무신사/네이버 등록 가능 -->\n<div style="max-width:860px;margin:0 auto;padding:20px;font-family:'Noto Sans KR',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#333;line-height:1.6;">\n    ${fieldsHtml}\n</div>`;
+    return `<!-- 상품 상세 설명 HTML -->\n<div style="max-width:860px;margin:0 auto;padding:20px;font-family:'Noto Sans KR',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#333;line-height:1.6;">\n    ${fieldsHtml}\n</div>`;
 };
 
-export default function AdjustmentPanel({ data, onUpdate, activeSection: previewActiveSection, textElements = [], onAddTextElement, onUpdateTextElement, onDeleteTextElement, onAddSectionWithImage }: AdjustmentPanelProps) {
+export default function AdjustmentPanel({ data, onUpdate, activeSection: previewActiveSection, textElements = [], onAddTextElement, onUpdateTextElement, onDeleteTextElement, onAddSectionWithImage, lineElements = [], onAddLineElement, onDeleteLineElement, onAddGridSection }: AdjustmentPanelProps) {
     const [activeSection, setActiveSection] = useState<Section>('hero');
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
     const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
     const [draggedField, setDraggedField] = useState<string | null>(null);
-
-    // 신발 교체 및 제품 관리 상태
     const [selectedProductIndex, setSelectedProductIndex] = useState<number>(0);
     const [productDragActive, setProductDragActive] = useState(false);
     const [isReplacingShoes, setIsReplacingShoes] = useState(false);
     const [replaceProgress, setReplaceProgress] = useState({ current: 0, total: 0 });
     const productInputRef = useRef<HTMLInputElement>(null);
+    const [isRemovingBg, setIsRemovingBg] = useState(false);
+    const [bgRemoveProgress, setBgRemoveProgress] = useState({ current: 0, total: 0 });
+    const [lang, setLang] = useState<'ko' | 'en'>('ko');
+
+    // 선 추가 상태
+    const [lineType, setLineType] = useState<'straight' | 'curved' | 'angled'>('straight');
+    const [lineWidth, setLineWidth] = useState(2);
+    const [lineCap, setLineCap] = useState<'round' | 'square' | 'butt'>('round');
+    const [lineEnd, setLineEnd] = useState<'none' | 'arrow'>('none');
+    const [lineColor, setLineColor] = useState('#000000');
+
+    // 그리드 상태
+    const [gridCols, setGridCols] = useState(2);
+    const [gridRows, setGridRows] = useState(2);
+    const [gridHeight, setGridHeight] = useState(400);
 
     const fieldSettings = data.heroFieldSettings || DEFAULT_FIELD_SETTINGS;
     const fieldOrder = data.heroFieldOrder || DEFAULT_FIELD_ORDER;
@@ -111,7 +149,6 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
         finally { setIsGeneratingAI(false); }
     };
 
-    // 제품(신발) 드롭존 핸들러 (다중 파일 지원)
     const handleProductDragOver = (e: React.DragEvent) => { e.preventDefault(); setProductDragActive(true); };
     const handleProductDragLeave = () => setProductDragActive(false);
     const handleProductDrop = async (e: React.DragEvent) => {
@@ -119,20 +156,8 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
         setProductDragActive(false);
         const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
         if (files.length > 0) {
-            const newFiles = [...productFiles, ...files].slice(0, 10); // 최대 10장
+            const newFiles = [...productFiles, ...files].slice(0, 10);
             onUpdate({ ...data, productFiles: newFiles });
-
-            // 프리뷰에 원본 자동 추가 (사용자 요청: "업로드된 제품은 사이즈가 꽉차게 한장씩 보여서")
-            if (onAddSectionWithImage) {
-                for (const file of files) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                        const result = ev.target?.result as string;
-                        onAddSectionWithImage(result, 'product_original');
-                    };
-                    reader.readAsDataURL(file);
-                }
-            }
         }
     };
     const handleProductFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,22 +165,9 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
         if (files.length > 0) {
             const newFiles = [...productFiles, ...files].slice(0, 10);
             onUpdate({ ...data, productFiles: newFiles });
-
-            // 프리뷰에 원본 자동 추가
-            if (onAddSectionWithImage) {
-                for (const file of files) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                        const result = ev.target?.result as string;
-                        onAddSectionWithImage(result, 'product_original');
-                    };
-                    reader.readAsDataURL(file);
-                }
-            }
         }
     };
 
-    // 선택된 제품 삭제
     const removeProductFile = (index: number) => {
         const newFiles = [...productFiles];
         newFiles.splice(index, 1);
@@ -163,66 +175,38 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
         if (selectedProductIndex >= newFiles.length) setSelectedProductIndex(Math.max(0, newFiles.length - 1));
     };
 
-    // VFX 신발 교체 실행
     const handleShoeReplacement = async () => {
         const selectedFile = productFiles[selectedProductIndex];
-        if (!selectedFile) { alert('교체할 제품(신발) 이미지를 선택하세요.'); return; }
-
-        // 프리뷰의 모든 이미지 URL 수집
+        if (!selectedFile) { alert('교체할 제품 이미지를 선택하세요.'); return; }
         const allImageUrls: string[] = [];
         Object.entries(data.imageUrls || {}).forEach(([key, value]) => {
             if (key !== 'products' && typeof value === 'string' && value.startsWith('data:')) {
                 allImageUrls.push(value);
             }
         });
-
         if (allImageUrls.length === 0) { alert('프리뷰에 이미지가 없습니다.'); return; }
-
         setIsReplacingShoes(true);
         setReplaceProgress({ current: 0, total: allImageUrls.length });
-
         try {
-            // 제품 이미지 전처리
             const reader = new FileReader();
             reader.readAsDataURL(selectedFile);
             await new Promise(resolve => reader.onload = resolve);
             const productImage = reader.result as string;
             const productBase64 = productImage.includes('base64,') ? productImage.split('base64,')[1] : productImage;
-
-            const results = await batchShoeReplacement(
-                allImageUrls,
-                productBase64,
-                (current, total) => setReplaceProgress({ current, total })
-            );
-
-            // 결과를 imageUrls에 반영
+            const results = await batchShoeReplacement(allImageUrls, productBase64, (current, total) => setReplaceProgress({ current, total }));
             const newImageUrls = { ...data.imageUrls };
             let successCount = 0;
             results.forEach((result, idx) => {
                 if (result.result) {
-                    // 원본 URL에 해당하는 키 찾아서 교체
                     Object.entries(newImageUrls).forEach(([key, url]) => {
-                        if (url === allImageUrls[idx]) {
-                            newImageUrls[key] = result.result;
-                            successCount++;
-                        }
+                        if (url === allImageUrls[idx]) { newImageUrls[key] = result.result; successCount++; }
                     });
                 }
             });
-
-            if (successCount > 0) {
-                onUpdate({ ...data, imageUrls: newImageUrls });
-                alert(`${successCount}개 이미지의 신발이 교체되었습니다!`);
-            } else {
-                alert('신발 교체에 실패했습니다. 콘솔을 확인하세요.');
-            }
-        } catch (error) {
-            console.error('신발 교체 오류:', error);
-            alert('신발 교체 중 오류가 발생했습니다.');
-        } finally {
-            setIsReplacingShoes(false);
-            setReplaceProgress({ current: 0, total: 0 });
-        }
+            if (successCount > 0) { onUpdate({ ...data, imageUrls: newImageUrls }); alert(`${successCount}개 이미지의 신발이 교체되었습니다.`); }
+            else { alert('신발 교체에 실패했습니다.'); }
+        } catch (error) { console.error('신발 교체 오류:', error); alert('신발 교체 중 오류가 발생했습니다.'); }
+        finally { setIsReplacingShoes(false); setReplaceProgress({ current: 0, total: 0 }); }
     };
 
     const handleAddText = () => {
@@ -232,131 +216,449 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
         setSelectedTextId(newText.id);
     };
 
+    // 선 추가 핸들러
+    const handleAddLine = () => {
+        if (!onAddLineElement) {
+            alert('선 추가 기능이 준비 중입니다.');
+            return;
+        }
+        const newLine: LineElement = {
+            id: `line-${Date.now()}`,
+            sectionId: previewActiveSection || 'hero',
+            type: lineType,
+            strokeWidth: lineWidth,
+            strokeColor: lineColor,
+            lineCap: lineCap,
+            lineEnd: lineEnd
+        };
+        onAddLineElement(newLine);
+    };
+
+    // 그리드 섹션 추가 핸들러
+    const handleAddGrid = () => {
+        if (!onAddGridSection) {
+            alert('그리드 추가 기능이 준비 중입니다.');
+            return;
+        }
+        const newGrid: GridSection = {
+            id: `grid-${Date.now()}`,
+            cols: gridCols,
+            rows: gridRows,
+            height: gridHeight,
+            cells: Array(gridCols * gridRows).fill(null)
+        };
+        onAddGridSection(newGrid);
+    };
+
     const selectedText = textElements.find(t => t.id === selectedTextId);
 
     const renderField = (fieldDef: typeof HERO_FIELDS[0]) => {
-        const { id, label, defaultSize, aiHint, multiline, isSpec, isHeightSpec } = fieldDef;
+        const { id, label, labelKo, defaultSize, multiline, isSpec, isHeightSpec } = fieldDef;
+        const displayLabel = lang === 'ko' ? labelKo : label;
         const isVisible = fieldSettings[id]?.visible !== false;
         const fontSize = fieldSettings[id]?.fontSize || defaultSize;
 
         if (isSpec) {
             return (
-                <FieldToggleControl key={id} fieldId={id} label={label} isVisible={isVisible} onToggleVisibility={() => updateFieldSetting(id, 'visible', !isVisible)} fontSize={fontSize} onFontSizeChange={(size: number) => updateFieldSetting(id, 'fontSize', size)} draggable onDragStart={handleDragStart(id)} onDragOver={handleDragOver} onDrop={handleDrop(id)}>
-                    <div className="grid grid-cols-2 gap-1">
-                        <div><label className="text-[9px] text-gray-500">Color 🤖</label><input className="w-full border p-0.5 rounded text-xs" value={data.heroTextContent?.specColor || ''} onChange={(e) => updateHeroContent('specColor', e.target.value)} /></div>
-                        <div><label className="text-[9px] text-gray-500">Upper 🤖</label><input className="w-full border p-0.5 rounded text-xs" value={data.heroTextContent?.specUpper || ''} onChange={(e) => updateHeroContent('specUpper', e.target.value)} /></div>
-                        <div><label className="text-[9px] text-gray-500">Lining 🤖</label><input className="w-full border p-0.5 rounded text-xs" value={data.heroTextContent?.specLining || ''} onChange={(e) => updateHeroContent('specLining', e.target.value)} /></div>
-                        <div><label className="text-[9px] text-gray-500">Outsole 🤖</label><input className="w-full border p-0.5 rounded text-xs" value={data.heroTextContent?.specOutsole || ''} onChange={(e) => updateHeroContent('specOutsole', e.target.value)} /></div>
-                        <div><label className="text-[9px] text-gray-500">Origin 🤖</label><input className="w-full border p-0.5 rounded text-xs" value={data.heroTextContent?.specOrigin || ''} onChange={(e) => updateHeroContent('specOrigin', e.target.value)} /></div>
-                        <div><label className="text-[9px] text-gray-500">굽 높이 🤖</label><input className="w-full border p-0.5 rounded text-xs" value={data.heroTextContent?.heelHeight || ''} onChange={(e) => updateHeroContent('heelHeight', e.target.value)} /></div>
+                <FieldToggleControl key={id} fieldId={id} label={displayLabel} isVisible={isVisible} onToggleVisibility={() => updateFieldSetting(id, 'visible', !isVisible)} fontSize={fontSize} onFontSizeChange={(size: number) => updateFieldSetting(id, 'fontSize', size)} draggable onDragStart={handleDragStart(id)} onDragOver={handleDragOver} onDrop={handleDrop(id)}>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div><label className="text-[9px] text-[#666] mb-0.5 block">{lang === 'ko' ? '컬러' : 'Color'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.specColor || ''} onChange={(e) => updateHeroContent('specColor', e.target.value)} /></div>
+                        <div><label className="text-[9px] text-[#666] mb-0.5 block">{lang === 'ko' ? '갑피' : 'Upper'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.specUpper || ''} onChange={(e) => updateHeroContent('specUpper', e.target.value)} /></div>
+                        <div><label className="text-[9px] text-[#666] mb-0.5 block">{lang === 'ko' ? '안감' : 'Lining'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.specLining || ''} onChange={(e) => updateHeroContent('specLining', e.target.value)} /></div>
+                        <div><label className="text-[9px] text-[#666] mb-0.5 block">{lang === 'ko' ? '밑창' : 'Outsole'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.specOutsole || ''} onChange={(e) => updateHeroContent('specOutsole', e.target.value)} /></div>
+                        <div><label className="text-[9px] text-[#666] mb-0.5 block">{lang === 'ko' ? '원산지' : 'Origin'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.specOrigin || ''} onChange={(e) => updateHeroContent('specOrigin', e.target.value)} /></div>
+                        <div><label className="text-[9px] text-[#666] mb-0.5 block">{lang === 'ko' ? '굽높이' : 'Heel'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.heelHeight || ''} onChange={(e) => updateHeroContent('heelHeight', e.target.value)} /></div>
                     </div>
                 </FieldToggleControl>
             );
         }
         if (isHeightSpec) {
             return (
-                <FieldToggleControl key={id} fieldId={id} label={label} isVisible={isVisible} onToggleVisibility={() => updateFieldSetting(id, 'visible', !isVisible)} fontSize={fontSize} onFontSizeChange={(size: number) => updateFieldSetting(id, 'fontSize', size)} draggable onDragStart={handleDragStart(id)} onDragOver={handleDragOver} onDrop={handleDrop(id)}>
-                    <div className="grid grid-cols-3 gap-1">
-                        <div><label className="text-[9px] text-gray-500">아웃솔 🤖</label><input className="w-full border p-0.5 rounded text-xs" value={data.heroTextContent?.outsole || ''} onChange={(e) => updateHeroContent('outsole', e.target.value)} placeholder="3cm" /></div>
-                        <div><label className="text-[9px] text-gray-500">인솔 🤖</label><input className="w-full border p-0.5 rounded text-xs" value={data.heroTextContent?.insole || ''} onChange={(e) => updateHeroContent('insole', e.target.value)} placeholder="1.5cm" /></div>
-                        <div><label className="text-[9px] text-orange-600 font-bold">총 키높이 🤖</label><input className="w-full border border-orange-300 bg-orange-50 p-0.5 rounded text-xs font-bold" value={data.heroTextContent?.totalHeight || ''} onChange={(e) => updateHeroContent('totalHeight', e.target.value)} placeholder="4.5cm" /></div>
+                <FieldToggleControl key={id} fieldId={id} label={displayLabel} isVisible={isVisible} onToggleVisibility={() => updateFieldSetting(id, 'visible', !isVisible)} fontSize={fontSize} onFontSizeChange={(size: number) => updateFieldSetting(id, 'fontSize', size)} draggable onDragStart={handleDragStart(id)} onDragOver={handleDragOver} onDrop={handleDrop(id)}>
+                    <div className="grid grid-cols-3 gap-2">
+                        <div><label className="text-[9px] text-[#666] mb-0.5 block">{lang === 'ko' ? '아웃솔' : 'Outsole'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.outsole || ''} onChange={(e) => updateHeroContent('outsole', e.target.value)} placeholder="3cm" /></div>
+                        <div><label className="text-[9px] text-[#666] mb-0.5 block">{lang === 'ko' ? '인솔' : 'Insole'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.insole || ''} onChange={(e) => updateHeroContent('insole', e.target.value)} placeholder="1.5cm" /></div>
+                        <div><label className="text-[9px] text-[#0d99ff] mb-0.5 block font-medium">{lang === 'ko' ? '총 높이' : 'Total'}</label><input className="w-full bg-[#0d99ff]/10 border border-[#0d99ff]/50 rounded px-2 py-1 text-[10px] text-[#0d99ff] font-medium focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.totalHeight || ''} onChange={(e) => updateHeroContent('totalHeight', e.target.value)} placeholder="4.5cm" /></div>
                     </div>
                 </FieldToggleControl>
             );
         }
         return (
-            <FieldToggleControl key={id} fieldId={id} label={label} isVisible={isVisible} onToggleVisibility={() => updateFieldSetting(id, 'visible', !isVisible)} fontSize={fontSize} onFontSizeChange={(size: number) => updateFieldSetting(id, 'fontSize', size)} draggable onDragStart={handleDragStart(id)} onDragOver={handleDragOver} onDrop={handleDrop(id)}>
-                {multiline ? <textarea rows={2} className="w-full border p-1 rounded text-sm resize-none" value={data.heroTextContent?.[id] || ''} onChange={(e) => updateHeroContent(id, e.target.value)} placeholder={aiHint} />
-                    : <input className="w-full border p-1 rounded text-sm" value={data.heroTextContent?.[id] || ''} onChange={(e) => updateHeroContent(id, e.target.value)} placeholder={aiHint} />}
+            <FieldToggleControl key={id} fieldId={id} label={displayLabel} isVisible={isVisible} onToggleVisibility={() => updateFieldSetting(id, 'visible', !isVisible)} fontSize={fontSize} onFontSizeChange={(size: number) => updateFieldSetting(id, 'fontSize', size)} draggable onDragStart={handleDragStart(id)} onDragOver={handleDragOver} onDrop={handleDrop(id)}>
+                {multiline ? <textarea rows={2} className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white resize-none focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.[id] || ''} onChange={(e) => updateHeroContent(id, e.target.value)} />
+                    : <input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[10px] text-white focus:border-[#0d99ff] focus:outline-none" value={data.heroTextContent?.[id] || ''} onChange={(e) => updateHeroContent(id, e.target.value)} />}
             </FieldToggleControl>
         );
     };
 
     const orderedFields = fieldOrder.map((id: string) => HERO_FIELDS.find(f => f.id === id)).filter(Boolean);
 
+    const sections = [
+        { id: 'hero' as Section, label: lang === 'ko' ? '히어로' : 'Hero' },
+        { id: 'products' as Section, label: lang === 'ko' ? '제품' : 'Products' },
+        { id: 'models' as Section, label: lang === 'ko' ? '모델' : 'Models' },
+        { id: 'contents' as Section, label: lang === 'ko' ? '콘텐츠' : 'Contents' },
+        { id: 'closeup' as Section, label: lang === 'ko' ? '디테일' : 'Detail' }
+    ];
+
     return (
-        <div className="h-full flex flex-col bg-white">
-            <div className="flex-shrink-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-4"><h2 className="text-lg font-bold">콘텐츠 편집 패널</h2></div>
-            <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
-                <nav className="grid grid-cols-5 gap-1 p-2">
-                    {[{ id: 'hero' as Section, label: '히어로', emoji: '🎯' }, { id: 'products' as Section, label: '제품', emoji: '📦' }, { id: 'models' as Section, label: '모델', emoji: '👔' }, { id: 'contents' as Section, label: '콘텐츠', emoji: '📝' }, { id: 'closeup' as Section, label: '디테일', emoji: '🔍' }].map(section => (
-                        <button key={section.id} onClick={() => setActiveSection(section.id)} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeSection === section.id ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><div>{section.emoji}</div><div>{section.label}</div></button>
+        <div className="h-full flex flex-col bg-[#1e1e1e] text-[#e5e5e5]" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' }}>
+            {/* 헤더 */}
+            <div className="flex-shrink-0 h-7 bg-[#2c2c2c] border-b border-[#3c3c3c] flex items-center justify-between px-2">
+                <span className="text-[9px] font-medium tracking-wide text-white">Design</span>
+                <div className="flex items-center bg-[#1e1e1e] rounded overflow-hidden">
+                    <button onClick={() => setLang('ko')} className={`px-1 py-0.5 text-[7px] font-medium transition-colors ${lang === 'ko' ? 'bg-[#0d99ff] text-white' : 'text-[#666] hover:text-white'}`}>KR</button>
+                    <button onClick={() => setLang('en')} className={`px-1 py-0.5 text-[7px] font-medium transition-colors ${lang === 'en' ? 'bg-[#0d99ff] text-white' : 'text-[#666] hover:text-white'}`}>EN</button>
+                </div>
+            </div>
+
+            {/* 탭 */}
+            <div className="flex-shrink-0 border-b border-[#3c3c3c] bg-[#252525]">
+                <nav className="flex">
+                    {sections.map(section => (
+                        <button
+                            key={section.id}
+                            onClick={() => setActiveSection(section.id)}
+                            className={`flex-1 px-1 py-2 text-[9px] font-medium transition-colors ${activeSection === section.id
+                                ? 'text-white bg-[#1e1e1e] border-b-2 border-[#0d99ff]'
+                                : 'text-[#999] hover:text-white hover:bg-[#2c2c2c]'
+                                }`}
+                        >
+                            {section.label}
+                        </button>
                     ))}
                 </nav>
             </div>
-            <div className="flex-grow overflow-y-auto p-3">
+
+            {/* 콘텐츠 */}
+            <div className="flex-grow overflow-y-auto p-2">
                 {activeSection === 'hero' && (
                     <div className="space-y-1.5">
                         <div className="flex justify-between items-center mb-2">
-                            <h3 className="font-bold text-sm text-blue-900">🎯 히어로 섹션</h3>
-                            <button onClick={handleAIAnalysis} disabled={isGeneratingAI} className={`px-2 py-1 text-white text-xs font-bold rounded ${isGeneratingAI ? 'bg-gray-400' : 'bg-zinc-800 hover:bg-black'}`}>{isGeneratingAI ? '분석 중...' : '🔄 AI 재분석'}</button>
+                            <span className="text-[9px] font-medium text-[#999]">{lang === 'ko' ? '히어로 섹션' : 'Hero Section'}</span>
+                            <button onClick={handleAIAnalysis} disabled={isGeneratingAI} className={`px-1.5 py-0.5 text-[8px] font-medium rounded transition-colors ${isGeneratingAI ? 'bg-[#3c3c3c] text-[#666]' : 'bg-[#0d99ff] text-white hover:bg-[#0b87e0]'}`}>
+                                {isGeneratingAI ? 'Analyzing...' : 'AI'}
+                            </button>
                         </div>
-                        <div className="text-[10px] text-gray-400 mb-2 bg-gray-50 p-1.5 rounded">💡 필드를 드래그하여 순서를 변경할 수 있습니다</div>
                         {orderedFields.map((fieldDef: any) => renderField(fieldDef))}
-                        <button onClick={() => { const heroHtml = generateStandaloneHeroHTML(data); const blob = new Blob([heroHtml], { type: 'text/html' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${data.heroTextContent?.productName || 'hero'}_section.html`; a.click(); URL.revokeObjectURL(url); }} className="w-full bg-green-600 text-white font-bold py-1.5 rounded hover:bg-green-700 text-sm mt-2">📥 히어로 섹션 HTML 다운로드</button>
+                        <button
+                            onClick={() => {
+                                const heroHtml = generateStandaloneHeroHTML(data);
+                                const blob = new Blob([heroHtml], { type: 'text/html' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `${data.heroTextContent?.productName || 'hero'}_section.html`;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                            }}
+                            className="w-full bg-[#0d99ff] text-white text-[8px] font-medium py-1 rounded hover:bg-[#0b87e0] transition-colors mt-2"
+                        >
+                            {lang === 'ko' ? 'HTML 내보내기' : 'Export HTML'}
+                        </button>
                     </div>
                 )}
+
                 {activeSection === 'products' && (
-                    <div className="space-y-3">
-                        {/* 제품 드롭존 (다중 업로드) */}
-                        <div className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${productDragActive ? 'border-purple-500 bg-purple-50' : 'border-gray-300 hover:border-blue-400'}`}
-                            onDragOver={handleProductDragOver} onDragLeave={handleProductDragLeave} onDrop={handleProductDrop} onClick={() => productInputRef.current?.click()}>
+                    <div className="space-y-2">
+                        {/* 제품 업로드 - 1:1 비율 */}
+                        <div
+                            className={`aspect-square border border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors ${productDragActive ? 'border-[#0d99ff] bg-[#0d99ff]/10' : 'border-[#3c3c3c] hover:border-[#555]'}`}
+                            onDragOver={handleProductDragOver}
+                            onDragLeave={handleProductDragLeave}
+                            onDrop={handleProductDrop}
+                            onClick={() => productInputRef.current?.click()}
+                        >
                             <input ref={productInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleProductFileSelect} />
-                            <div className="space-y-1">
-                                <div className="text-3xl">📦</div>
-                                <div className="text-sm font-bold text-gray-700">제품 이미지 업로드 (최대 10장)</div>
-                                <div className="text-xs text-gray-400">드래그 또는 클릭하여 추가</div>
-                            </div>
+                            <div className="text-[#555] text-2xl mb-1">+</div>
+                            <p className="text-[9px] font-medium text-[#777]">{lang === 'ko' ? '이미지 드롭 또는 클릭' : 'Drop or click'}</p>
+                            <p className="text-[8px] text-[#555]">{lang === 'ko' ? '최대 10장' : 'Max 10'}</p>
                         </div>
 
-                        {/* 업로드된 제품 목록 */}
+                        {/* 업로드된 제품 */}
                         {productFiles.length > 0 && (
-                            <div className="bg-gray-50 rounded-lg p-3">
-                                <div className="text-xs font-bold text-gray-700 mb-2">업로드된 제품 ({productFiles.length}/10)</div>
-                                <div className="grid grid-cols-4 gap-2">
+                            <div className="bg-[#252525] rounded p-2">
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[9px] font-medium text-[#999]">{lang === 'ko' ? '소스 이미지' : 'Source'}</span>
+                                    <span className="text-[8px] text-[#666]">{productFiles.length}/10</span>
+                                </div>
+                                <div className="grid grid-cols-4 gap-1">
                                     {productFiles.map((file: File, idx: number) => (
-                                        <div key={idx} onClick={() => setSelectedProductIndex(idx)}
-                                            className={`relative aspect-square rounded-lg overflow-hidden border-2 cursor-pointer ${selectedProductIndex === idx ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'}`}>
+                                        <div key={idx} onClick={() => setSelectedProductIndex(idx)} className={`relative aspect-square rounded overflow-hidden cursor-pointer ring-1 ${selectedProductIndex === idx ? 'ring-[#0d99ff]' : 'ring-transparent hover:ring-[#555]'}`}>
                                             <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" alt={`Product ${idx}`} />
-                                            <button onClick={(e) => { e.stopPropagation(); removeProductFile(idx); }} className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] hover:bg-red-500">×</button>
-                                            {selectedProductIndex === idx && <div className="absolute bottom-0 left-0 right-0 bg-blue-500 text-white text-[9px] text-center py-0.5">선택됨</div>}
+                                            <button onClick={(e) => { e.stopPropagation(); removeProductFile(idx); }} className="absolute top-0 right-0 bg-black/60 text-white w-3 h-3 rounded-full flex items-center justify-center text-[8px] hover:bg-red-500">×</button>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
 
-                        {/* 신발 교체 버튼 */}
-                        <button onClick={handleShoeReplacement} disabled={productFiles.length === 0 || isReplacingShoes}
-                            className={`w-full py-3 rounded-xl font-bold text-white transition-all ${productFiles.length === 0 || isReplacingShoes ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-lg'}`}>
-                            {isReplacingShoes ? (
-                                <span className="flex items-center justify-center gap-2">
-                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                    VFX 신발 교체 중... ({replaceProgress.current}/{replaceProgress.total})
-                                </span>
-                            ) : '👟 프리뷰 전체 신발 교체 (VFX)'}
-                        </button>
+                        {/* 액션 버튼들 */}
+                        {productFiles.length > 0 && (
+                            <>
+                                <button
+                                    onClick={async () => {
+                                        if (isRemovingBg || productFiles.length === 0) return;
+                                        setIsRemovingBg(true);
+                                        setBgRemoveProgress({ current: 0, total: productFiles.length });
+                                        try {
+                                            const base64Images: string[] = [];
+                                            for (const file of productFiles) {
+                                                const reader = new FileReader();
+                                                const base64 = await new Promise<string>((resolve) => { reader.onload = (e) => resolve(e.target?.result as string); reader.readAsDataURL(file); });
+                                                base64Images.push(base64);
+                                            }
+                                            const results = await batchRemoveBackground(base64Images, (current, total) => setBgRemoveProgress({ current, total }));
+                                            alert(`${results.filter(r => r.result).length} ${lang === 'ko' ? '배경 제거 완료' : 'removed'}`);
+                                        } catch (error) { console.error(error); alert(lang === 'ko' ? '배경 제거 실패' : 'Failed'); }
+                                        finally { setIsRemovingBg(false); setBgRemoveProgress({ current: 0, total: 0 }); }
+                                    }}
+                                    disabled={isRemovingBg}
+                                    className={`w-full py-1.5 text-[9px] font-medium rounded transition-colors ${isRemovingBg ? 'bg-[#3c3c3c] text-[#666]' : 'bg-[#2c2c2c] text-white hover:bg-[#3c3c3c] border border-[#3c3c3c]'}`}
+                                >
+                                    {isRemovingBg ? `${bgRemoveProgress.current}/${bgRemoveProgress.total}` : (lang === 'ko' ? '배경 제거' : 'Remove BG')}
+                                </button>
 
-                        <div className="text-[10px] text-gray-400 bg-gray-50 p-2 rounded">
-                            💡 선택된 제품 이미지로 프리뷰의 모든 신발을 교체합니다.
-                        </div>
+                                <button onClick={handleShoeReplacement} disabled={productFiles.length === 0 || isReplacingShoes}
+                                    className={`w-full py-1.5 text-[9px] font-medium rounded transition-colors ${productFiles.length === 0 || isReplacingShoes ? 'bg-[#3c3c3c] text-[#666]' : 'bg-[#0d99ff] text-white hover:bg-[#0b87e0]'}`}>
+                                    {isReplacingShoes ? `${replaceProgress.current}/${replaceProgress.total}` : (lang === 'ko' ? '신발 교체' : 'Replace Shoes')}
+                                </button>
+                            </>
+                        )}
 
-                        {/* 제품 효과 패널 */}
-                        <ProductEnhancementPanel productFiles={productFiles} onResultsUpdate={(results: any) => { const doneResults = results.filter((r: any) => r.status === 'done' && r.url); if (doneResults.length > 0) { const newUrls = doneResults.map((r: any) => r.url!); const currentUrls = data.imageUrls?.products || []; const uniqueNewUrls = newUrls.filter((url: string) => !currentUrls.includes(url)); if (uniqueNewUrls.length > 0) { onUpdate({ ...data, imageUrls: { ...data.imageUrls, products: [...currentUrls, ...uniqueNewUrls] } }); } } }} onAddSectionWithImage={onAddSectionWithImage} />
+                        <ProductEnhancementPanel productFiles={productFiles} onResultsUpdate={(results: any) => {
+                            const doneResults = results.filter((r: any) => r.status === 'done' && r.url);
+                            if (doneResults.length > 0) {
+                                const newUrls = doneResults.map((r: any) => r.url!);
+                                const currentUrls = data.imageUrls?.products || [];
+                                const uniqueNewUrls = newUrls.filter((url: string) => !currentUrls.includes(url));
+                                if (uniqueNewUrls.length > 0) { onUpdate({ ...data, imageUrls: { ...data.imageUrls, products: [...currentUrls, ...uniqueNewUrls] } }); }
+                            }
+                        }} onAddSectionWithImage={onAddSectionWithImage} />
                     </div>
                 )}
-                {activeSection === 'models' && <div className="space-y-4"><ModelChapterPanel data={data} onUpdate={onUpdate} /></div>}
+
+                {activeSection === 'models' && <ModelChapterPanel data={data} onUpdate={onUpdate} />}
                 {activeSection === 'contents' && <ContentGeneratorPanel productImages={data.imageUrls?.products || []} />}
+
                 {activeSection === 'closeup' && (
-                    <div className="space-y-4">
-                        <div className="bg-white border rounded-xl p-4 shadow-sm">
-                            <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800">텍스트 편집</h3><button onClick={handleAddText} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded hover:bg-blue-700">+ 텍스트 추가</button></div>
-                            <div className="text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded">현재 선택된 섹션: <span className="font-bold text-blue-600">{previewActiveSection || '없음'}</span></div>
-                            <div className="space-y-2 mb-4 max-h-[200px] overflow-y-auto">
-                                {textElements.map((text: TextElement) => (<div key={text.id} onClick={() => setSelectedTextId(text.id)} className={`p-2 border rounded cursor-pointer flex justify-between items-center ${selectedTextId === text.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}><span className="text-xs truncate max-w-[150px]">{text.content}</span><button onClick={(e) => { e.stopPropagation(); onDeleteTextElement?.(text.id); }} className="text-gray-400 hover:text-red-500">🗑️</button></div>))}
-                                {textElements.length === 0 && <div className="text-center text-gray-400 text-xs py-4">추가된 텍스트가 없습니다.</div>}
+                    <div className="space-y-2">
+                        {/* 텍스트 요소 */}
+                        <div className="bg-[#252525] rounded p-2">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-[9px] font-medium text-[#999]">{lang === 'ko' ? '텍스트 요소' : 'Text Elements'}</span>
+                                <button onClick={handleAddText} className="px-1.5 py-0.5 bg-[#0d99ff] text-white text-[8px] font-medium rounded hover:bg-[#0b87e0]">+</button>
                             </div>
-                            {selectedText && onUpdateTextElement && (<div className="border-t pt-4 space-y-3"><div><label className="block text-xs font-bold text-gray-700 mb-1">내용</label><textarea className="w-full border p-2 rounded text-sm" rows={3} value={selectedText.content} onChange={(e) => onUpdateTextElement(selectedText.id, 'content', e.target.value)} /></div><div className="grid grid-cols-2 gap-2"><div><label className="block text-xs font-bold text-gray-700 mb-1">크기</label><input type="number" className="w-full border p-2 rounded text-sm" value={selectedText.fontSize} onChange={(e) => onUpdateTextElement(selectedText.id, 'fontSize', parseInt(e.target.value))} /></div><div><label className="block text-xs font-bold text-gray-700 mb-1">색상</label><input type="color" className="w-full h-[38px] border p-1 rounded" value={selectedText.color || '#000000'} onChange={(e) => onUpdateTextElement(selectedText.id, 'color', e.target.value)} /></div></div></div>)}
+                            <div className="text-[8px] text-[#666] mb-2">Active: <span className="text-[#0d99ff]">{previewActiveSection || 'None'}</span></div>
+                            <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                                {textElements.map((text: TextElement) => (
+                                    <div key={text.id} onClick={() => setSelectedTextId(text.id)} className={`p-1.5 rounded cursor-pointer flex justify-between items-center ${selectedTextId === text.id ? 'bg-[#0d99ff]/20 ring-1 ring-[#0d99ff]' : 'bg-[#2c2c2c] hover:bg-[#3c3c3c]'}`}>
+                                        <span className="text-[9px] truncate max-w-[100px] text-white">{text.content}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); onDeleteTextElement?.(text.id); }} className="text-[#666] hover:text-red-400 text-[10px]">×</button>
+                                    </div>
+                                ))}
+                                {textElements.length === 0 && <div className="text-center text-[#666] text-[9px] py-4">{lang === 'ko' ? '텍스트 없음' : 'No text'}</div>}
+                            </div>
+                            {selectedText && onUpdateTextElement && (
+                                <div className="border-t border-[#3c3c3c] pt-2 mt-2 space-y-1.5">
+                                    <textarea className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[9px] text-white resize-none focus:border-[#0d99ff] focus:outline-none" rows={2} value={selectedText.content} onChange={(e) => onUpdateTextElement(selectedText.id, 'content', e.target.value)} />
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                        <input type="number" className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[9px] text-white focus:border-[#0d99ff] focus:outline-none" value={selectedText.fontSize} onChange={(e) => onUpdateTextElement(selectedText.id, 'fontSize', parseInt(e.target.value))} />
+                                        <input type="color" className="w-full h-6 bg-[#2c2c2c] border border-[#3c3c3c] rounded cursor-pointer" value={selectedText.color || '#000000'} onChange={(e) => onUpdateTextElement(selectedText.id, 'color', e.target.value)} />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 선 추가 */}
+                        <div className="bg-[#252525] rounded p-2">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-[9px] font-medium text-[#999]">{lang === 'ko' ? '선 추가' : 'Add Line'}</span>
+                                <button onClick={handleAddLine} className="px-1.5 py-0.5 bg-[#0d99ff] text-white text-[8px] font-medium rounded hover:bg-[#0b87e0]">+</button>
+                            </div>
+                            <div className="space-y-2">
+                                <div>
+                                    <label className="text-[8px] text-[#666] block mb-1">{lang === 'ko' ? '선 종류' : 'Line Type'}</label>
+                                    <div className="flex gap-1">
+                                        <button
+                                            onClick={() => setLineType('straight')}
+                                            className={`flex-1 py-1 text-[8px] rounded ${lineType === 'straight' ? 'bg-[#0d99ff]/20 text-[#0d99ff] border border-[#0d99ff]/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                        >
+                                            ─ {lang === 'ko' ? '직선' : 'Straight'}
+                                        </button>
+                                        <button
+                                            onClick={() => setLineType('curved')}
+                                            className={`flex-1 py-1 text-[8px] rounded ${lineType === 'curved' ? 'bg-[#0d99ff]/20 text-[#0d99ff] border border-[#0d99ff]/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                        >
+                                            ⌒ {lang === 'ko' ? '곡선' : 'Curved'}
+                                        </button>
+                                        <button
+                                            onClick={() => setLineType('angled')}
+                                            className={`flex-1 py-1 text-[8px] rounded ${lineType === 'angled' ? 'bg-[#0d99ff]/20 text-[#0d99ff] border border-[#0d99ff]/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                        >
+                                            └ {lang === 'ko' ? '꺾은선' : 'Angled'}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="text-[8px] text-[#666] block mb-1">{lang === 'ko' ? '굵기' : 'Width'}: {lineWidth}px</label>
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="10"
+                                            value={lineWidth}
+                                            onChange={(e) => setLineWidth(parseInt(e.target.value))}
+                                            className="w-full h-1 bg-[#3c3c3c] rounded appearance-none cursor-pointer"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[8px] text-[#666] block mb-1">{lang === 'ko' ? '끝선' : 'End Cap'}</label>
+                                        <div className="flex gap-1">
+                                            <button
+                                                onClick={() => { setLineCap('round'); setLineEnd('none'); }}
+                                                className={`flex-1 py-1 text-[8px] rounded ${lineCap === 'round' && lineEnd === 'none' ? 'bg-[#0d99ff]/20 text-[#0d99ff] border border-[#0d99ff]/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c]'}`}
+                                            >●</button>
+                                            <button
+                                                onClick={() => { setLineCap('square'); setLineEnd('none'); }}
+                                                className={`flex-1 py-1 text-[8px] rounded ${lineCap === 'square' && lineEnd === 'none' ? 'bg-[#0d99ff]/20 text-[#0d99ff] border border-[#0d99ff]/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c]'}`}
+                                            >■</button>
+                                            <button
+                                                onClick={() => setLineEnd('arrow')}
+                                                className={`flex-1 py-1 text-[8px] rounded ${lineEnd === 'arrow' ? 'bg-[#0d99ff]/20 text-[#0d99ff] border border-[#0d99ff]/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c]'}`}
+                                            >→</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-[8px] text-[#666] block mb-1">{lang === 'ko' ? '색상' : 'Color'}</label>
+                                    <input
+                                        type="color"
+                                        value={lineColor}
+                                        onChange={(e) => setLineColor(e.target.value)}
+                                        className="w-full h-6 bg-[#2c2c2c] border border-[#3c3c3c] rounded cursor-pointer"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 그리드/콜라주 추가 */}
+                        <div className="bg-[#252525] rounded p-2">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-[9px] font-medium text-[#999]">{lang === 'ko' ? '그리드/콜라주' : 'Grid/Collage'}</span>
+                                <span className="text-[8px] text-[#0d99ff]">{gridCols}×{gridRows}</span>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="text-[8px] text-[#666] block mb-1">{lang === 'ko' ? '가로 칸' : 'Columns'}</label>
+                                        <div className="flex gap-1">
+                                            {[1, 2, 3, 4].map(n => (
+                                                <button
+                                                    key={n}
+                                                    onClick={() => setGridCols(n)}
+                                                    className={`flex-1 py-1 text-[9px] font-bold rounded ${n === gridCols ? 'bg-[#0d99ff]/20 text-[#0d99ff] border border-[#0d99ff]/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                                >
+                                                    {n}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[8px] text-[#666] block mb-1">{lang === 'ko' ? '세로 칸' : 'Rows'}</label>
+                                        <div className="flex gap-1">
+                                            {[1, 2, 3, 4].map(n => (
+                                                <button
+                                                    key={n}
+                                                    onClick={() => setGridRows(n)}
+                                                    className={`flex-1 py-1 text-[9px] font-bold rounded ${n === gridRows ? 'bg-[#0d99ff]/20 text-[#0d99ff] border border-[#0d99ff]/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                                >
+                                                    {n}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                {/* 그리드 미리보기 */}
+                                <div className="aspect-video bg-[#1e1e1e] rounded border border-[#3c3c3c] p-1">
+                                    <div
+                                        className="w-full h-full grid gap-0.5"
+                                        style={{
+                                            gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+                                            gridTemplateRows: `repeat(${gridRows}, 1fr)`
+                                        }}
+                                    >
+                                        {Array.from({ length: gridCols * gridRows }).map((_, i) => (
+                                            <div key={i} className="bg-[#2c2c2c] rounded-sm flex items-center justify-center text-[#555] text-[8px]">
+                                                {i + 1}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={handleAddGrid}
+                                    className="w-full py-1.5 text-[9px] font-medium rounded bg-[#0d99ff] text-white hover:bg-[#0b87e0] transition-colors"
+                                >
+                                    + {lang === 'ko' ? '그리드 섹션 추가' : 'Add Grid Section'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* AI 제품 분석 섹션 */}
+                        <div className="bg-[#252525] rounded p-2">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-[9px] font-medium text-[#999]">{lang === 'ko' ? 'AI 제품 분석' : 'AI Product Analysis'}</span>
+                                <span className="text-[7px] text-[#0d99ff]">✨ AI</span>
+                            </div>
+                            <div className="space-y-2">
+                                <p className="text-[8px] text-[#666]">
+                                    {lang === 'ko'
+                                        ? '제품 사진을 분석하여 자동으로 SIZE GUIDE, A/S 안내, 주의사항을 생성합니다.'
+                                        : 'Analyze product photos to auto-generate SIZE GUIDE, A/S info, and cautions.'}
+                                </p>
+
+                                {/* 토글 옵션 */}
+                                <div className="space-y-1">
+                                    <label className="flex items-center justify-between cursor-pointer">
+                                        <span className="text-[8px] text-[#aaa]">📐 SIZE GUIDE (스케치)</span>
+                                        <input
+                                            type="checkbox"
+                                            defaultChecked
+                                            className="w-3 h-3 rounded border-[#555] bg-[#2c2c2c] accent-[#0d99ff]"
+                                        />
+                                    </label>
+                                    <label className="flex items-center justify-between cursor-pointer">
+                                        <span className="text-[8px] text-[#aaa]">🛠️ A/S 안내</span>
+                                        <input
+                                            type="checkbox"
+                                            defaultChecked
+                                            className="w-3 h-3 rounded border-[#555] bg-[#2c2c2c] accent-[#0d99ff]"
+                                        />
+                                    </label>
+                                    <label className="flex items-center justify-between cursor-pointer">
+                                        <span className="text-[8px] text-[#aaa]">⚠️ 기타 주의사항</span>
+                                        <input
+                                            type="checkbox"
+                                            defaultChecked
+                                            className="w-3 h-3 rounded border-[#555] bg-[#2c2c2c] accent-[#0d99ff]"
+                                        />
+                                    </label>
+                                </div>
+
+                                {/* 생성 버튼 */}
+                                <button
+                                    onClick={() => {
+                                        alert('AI 제품 분석 기능이 곧 구현됩니다. 제품 사진을 업로드하면 자동으로 분석합니다.');
+                                    }}
+                                    className="w-full py-2 text-[9px] font-medium rounded bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90 transition-opacity"
+                                >
+                                    🤖 {lang === 'ko' ? 'AI 콘텐츠 자동 생성' : 'Auto Generate with AI'}
+                                </button>
+
+                                <p className="text-[7px] text-[#555] text-center">
+                                    * 신발 측면(왼쪽) 사진이 필요합니다
+                                </p>
+                            </div>
                         </div>
                     </div>
                 )}

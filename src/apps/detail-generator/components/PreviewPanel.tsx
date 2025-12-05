@@ -34,6 +34,23 @@ interface PreviewPanelProps {
     onForceEdit?: (sectionId: string) => void;
     onCancelForceEdit?: (sectionId: string) => void;
     processingSections?: Set<string>; // Sections currently being processed
+    gridSections?: { [sectionId: string]: { cols: number; rows: number; height: number; cells: (string | null)[] } };
+    onUpdateGridCell?: (sectionId: string, cellIndex: number, imageUrl: string) => void;
+    lineElements?: Array<{
+        id: string;
+        sectionId: string;
+        type: 'straight' | 'curved' | 'angled';
+        strokeWidth: number;
+        strokeColor: string;
+        lineCap: 'round' | 'square' | 'arrow' | 'butt';
+        lineEnd: 'none' | 'arrow';
+        x1?: number;
+        y1?: number;
+        x2?: number;
+        y2?: number;
+    }>;
+    onUpdateLineElement?: (id: string, updates: { x1?: number; y1?: number; x2?: number; y2?: number }) => void;
+    onDeleteLineElement?: (id: string) => void;
 }
 
 export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
@@ -57,8 +74,28 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
     forceEditSections = new Set(),
     onForceEdit,
     onCancelForceEdit,
-    processingSections = new Set()
+    processingSections = new Set(),
+    gridSections = {},
+    onUpdateGridCell,
+    lineElements = [],
+    onUpdateLineElement,
+    onDeleteLineElement
 }, ref) => {
+    // 선택된 선 ID 상태
+    const [selectedLineId, setSelectedLineId] = React.useState<string | null>(null);
+
+    // 선 드래그 상태
+    const [lineDraggingState, setLineDraggingState] = React.useState<{
+        lineId: string | null;
+        handle: 'start' | 'end' | 'whole';
+        startMouseX: number;
+        startMouseY: number;
+        initialX1: number;
+        initialY1: number;
+        initialX2: number;
+        initialY2: number;
+    }>({ lineId: null, handle: 'whole', startMouseX: 0, startMouseY: 0, initialX1: 0, initialY1: 0, initialX2: 0, initialY2: 0 });
+
     const [draggingState, setDraggingState] = React.useState<{
         id: string | null;
         startX: number;
@@ -98,6 +135,67 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
         window.addEventListener('click', handleClick);
         return () => window.removeEventListener('click', handleClick);
     }, []);
+
+    // Delete key handler for selected line
+    React.useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLineId && onDeleteLineElement) {
+                e.preventDefault();
+                onDeleteLineElement(selectedLineId);
+                setSelectedLineId(null);
+            }
+            // ESC 키로 선택 해제
+            if (e.key === 'Escape') {
+                setSelectedLineId(null);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedLineId, onDeleteLineElement]);
+
+    // 선 드래그 이벤트 핸들러
+    React.useEffect(() => {
+        if (!lineDraggingState.lineId) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const deltaX = e.clientX - lineDraggingState.startMouseX;
+            const deltaY = e.clientY - lineDraggingState.startMouseY;
+
+            if (lineDraggingState.handle === 'start') {
+                // 시작점만 이동
+                onUpdateLineElement?.(lineDraggingState.lineId!, {
+                    x1: lineDraggingState.initialX1 + deltaX,
+                    y1: lineDraggingState.initialY1 + deltaY
+                });
+            } else if (lineDraggingState.handle === 'end') {
+                // 끝점만 이동
+                onUpdateLineElement?.(lineDraggingState.lineId!, {
+                    x2: lineDraggingState.initialX2 + deltaX,
+                    y2: lineDraggingState.initialY2 + deltaY
+                });
+            } else {
+                // 전체 선 이동
+                onUpdateLineElement?.(lineDraggingState.lineId!, {
+                    x1: lineDraggingState.initialX1 + deltaX,
+                    y1: lineDraggingState.initialY1 + deltaY,
+                    x2: lineDraggingState.initialX2 + deltaX,
+                    y2: lineDraggingState.initialY2 + deltaY
+                });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setLineDraggingState({ lineId: null, handle: 'whole', startMouseX: 0, startMouseY: 0, initialX1: 0, initialY1: 0, initialX2: 0, initialY2: 0 });
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [lineDraggingState, onUpdateLineElement]);
 
     // Intersection Observer for active section detection
     React.useEffect(() => {
@@ -367,11 +465,158 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
             });
     };
 
+    // 선 요소 렌더링 함수
+    const renderLineElements = (sectionId: string) => {
+        const sectionLines = lineElements.filter(line => line.sectionId === sectionId);
+        if (sectionLines.length === 0) return null;
+
+        return (
+            <svg
+                className="absolute inset-0 pointer-events-none"
+                style={{ width: '100%', height: '100%', zIndex: 999 }}
+            >
+                {sectionLines.map(line => {
+                    const x1 = line.x1 || 50;
+                    const y1 = line.y1 || 50;
+                    const x2 = line.x2 || 200;
+                    const y2 = line.y2 || 50;
+
+                    // 선 타입에 따른 path 생성
+                    let pathD = '';
+                    if (line.type === 'straight') {
+                        pathD = `M ${x1} ${y1} L ${x2} ${y2}`;
+                    } else if (line.type === 'curved') {
+                        // 곡선: 중간 제어점 생성
+                        const midX = (x1 + x2) / 2;
+                        const midY = Math.min(y1, y2) - 50; // 위로 볼록
+                        pathD = `M ${x1} ${y1} Q ${midX} ${midY} ${x2} ${y2}`;
+                    } else if (line.type === 'angled') {
+                        // 꺾은선: 중간에 꺾임점
+                        const midX = (x1 + x2) / 2;
+                        pathD = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+                    }
+
+                    // 화살표 마커 정의
+                    const markerId = `arrow-${line.id}`;
+
+                    return (
+                        <g key={line.id}>
+                            {line.lineEnd === 'arrow' && (
+                                <defs>
+                                    <marker
+                                        id={markerId}
+                                        markerWidth="10"
+                                        markerHeight="10"
+                                        refX="9"
+                                        refY="3"
+                                        orient="auto"
+                                        markerUnits="strokeWidth"
+                                    >
+                                        <path d="M0,0 L0,6 L9,3 z" fill={line.strokeColor} />
+                                    </marker>
+                                </defs>
+                            )}
+                            {/* 선택 표시 - 선택된 경우 파란 점선 테두리 */}
+                            {selectedLineId === line.id && (
+                                <path
+                                    d={pathD}
+                                    stroke="#3b82f6"
+                                    strokeWidth={line.strokeWidth + 6}
+                                    fill="none"
+                                    strokeDasharray="5,5"
+                                    style={{ pointerEvents: 'none' }}
+                                />
+                            )}
+                            <path
+                                d={pathD}
+                                stroke={line.strokeColor}
+                                strokeWidth={Math.max(line.strokeWidth, 10)} // 최소 10px로 클릭 영역 확대
+                                fill="none"
+                                strokeLinecap={line.lineCap === 'arrow' ? 'round' : line.lineCap}
+                                markerEnd={line.lineEnd === 'arrow' ? `url(#${markerId})` : undefined}
+                                style={{ pointerEvents: 'auto', cursor: 'grab', opacity: line.strokeWidth < 10 ? 0 : 1 }}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setSelectedLineId(line.id); // 선택 상태 설정
+                                    setLineDraggingState({
+                                        lineId: line.id,
+                                        handle: 'whole',
+                                        startMouseX: e.clientX,
+                                        startMouseY: e.clientY,
+                                        initialX1: x1,
+                                        initialY1: y1,
+                                        initialX2: x2,
+                                        initialY2: y2
+                                    });
+                                }}
+                            />
+                            {/* 실제 선 (얇은 선) */}
+                            <path
+                                d={pathD}
+                                stroke={line.strokeColor}
+                                strokeWidth={line.strokeWidth}
+                                fill="none"
+                                strokeLinecap={line.lineCap === 'arrow' ? 'round' : line.lineCap}
+                                markerEnd={line.lineEnd === 'arrow' ? `url(#${markerId})` : undefined}
+                                style={{ pointerEvents: 'none' }}
+                            />
+                            {/* 시작점 핸들 - 선택된 경우에만 표시 */}
+                            <circle
+                                cx={x1} cy={y1} r={selectedLineId === line.id ? 10 : 8}
+                                fill={selectedLineId === line.id ? '#3b82f6' : line.strokeColor}
+                                opacity={selectedLineId === line.id ? 1 : 0.7}
+                                style={{ cursor: 'move', pointerEvents: 'auto' }}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setSelectedLineId(line.id);
+                                    setLineDraggingState({
+                                        lineId: line.id,
+                                        handle: 'start',
+                                        startMouseX: e.clientX,
+                                        startMouseY: e.clientY,
+                                        initialX1: x1,
+                                        initialY1: y1,
+                                        initialX2: x2,
+                                        initialY2: y2
+                                    });
+                                }}
+                            />
+                            {/* 끝점 핸들 - 선택된 경우에만 표시 */}
+                            <circle
+                                cx={x2} cy={y2} r={selectedLineId === line.id ? 10 : 8}
+                                fill={selectedLineId === line.id ? '#3b82f6' : line.strokeColor}
+                                opacity={selectedLineId === line.id ? 1 : 0.7}
+                                style={{ cursor: 'move', pointerEvents: 'auto' }}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setSelectedLineId(line.id);
+                                    setLineDraggingState({
+                                        lineId: line.id,
+                                        handle: 'end',
+                                        startMouseX: e.clientX,
+                                        startMouseY: e.clientY,
+                                        initialX1: x1,
+                                        initialY1: y1,
+                                        initialX2: x2,
+                                        initialY2: y2
+                                    });
+                                }}
+                            />
+                        </g>
+                    );
+                })}
+            </svg>
+        );
+    };
+
     return (
         <div
             ref={ref}
             className="preview-panel bg-white shadow-lg pb-8 relative"
-            style={{ width: '1000px', margin: '0 auto' }}
+            style={{ width: '100%', maxWidth: '1000px', margin: '0 auto' }}
         >
             {/* Custom Context Menu - Rendered via Portal - REMOVED to use parent's menu */}
             {null}
@@ -389,13 +634,111 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                         >
                             <HeroSection content={data.heroTextContent} fieldSettings={data.heroFieldSettings} fieldOrder={data.heroFieldOrder} />
                             {renderTextElements(sectionKey)}
+                            {renderLineElements(sectionKey)}
+                        </div>
+                    );
+                }
+
+                // Grid Sections (Collage)
+                if (sectionKey.startsWith('grid-') && gridSections[sectionKey]) {
+                    const grid = gridSections[sectionKey];
+                    const gridHeight = sectionHeights[sectionKey] || grid.height;
+
+                    return (
+                        <div
+                            key={sectionKey}
+                            data-section={sectionKey}
+                            ref={el => { sectionRefs.current[sectionKey] = el; }}
+                            className="relative group"
+                            style={{ height: `${gridHeight}px` }}
+                            onContextMenu={(e) => handleContextMenu(e, sectionKey)}
+                        >
+                            {/* Grid Layout */}
+                            <div
+                                className="w-full h-full grid gap-1 p-1 bg-gray-100"
+                                style={{
+                                    gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
+                                    gridTemplateRows: `repeat(${grid.rows}, 1fr)`
+                                }}
+                            >
+                                {grid.cells.map((cellImage, cellIdx) => (
+                                    <div
+                                        key={`${sectionKey}-cell-${cellIdx}`}
+                                        className={`relative overflow-hidden bg-gray-200 border-2 border-dashed border-gray-300 
+                                            flex items-center justify-center cursor-pointer 
+                                            hover:border-blue-400 hover:bg-blue-50 transition-colors`}
+                                        onDragOver={handleDragOver}
+                                        onDrop={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                                const file = e.dataTransfer.files[0];
+                                                const reader = new FileReader();
+                                                reader.onload = (ev) => {
+                                                    const imageUrl = ev.target?.result as string;
+                                                    if (onUpdateGridCell) {
+                                                        onUpdateGridCell(sectionKey, cellIdx, imageUrl);
+                                                    }
+                                                };
+                                                reader.readAsDataURL(file);
+                                            }
+                                        }}
+                                        onClick={() => {
+                                            const input = document.createElement('input');
+                                            input.type = 'file';
+                                            input.accept = 'image/*';
+                                            input.onchange = (ev: any) => {
+                                                if (ev.target.files && ev.target.files.length > 0) {
+                                                    const file = ev.target.files[0];
+                                                    const reader = new FileReader();
+                                                    reader.onload = (evr) => {
+                                                        const imageUrl = evr.target?.result as string;
+                                                        if (onUpdateGridCell) {
+                                                            onUpdateGridCell(sectionKey, cellIdx, imageUrl);
+                                                        }
+                                                    };
+                                                    reader.readAsDataURL(file);
+                                                }
+                                            };
+                                            input.click();
+                                        }}
+                                    >
+                                        {cellImage ? (
+                                            <img
+                                                src={cellImage}
+                                                alt={`Cell ${cellIdx + 1}`}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        ) : (
+                                            <div className="text-gray-400 text-center">
+                                                <div className="text-2xl mb-1">+</div>
+                                                <div className="text-xs">{cellIdx + 1}</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Resize Handle */}
+                            <div
+                                className="absolute bottom-0 left-0 right-0 h-3 bg-gradient-to-t from-gray-300 to-transparent cursor-ns-resize hover:from-blue-400"
+                                onMouseDown={(e) => handleResizeMouseDown(e, sectionKey, gridHeight)}
+                            />
+
+                            {/* Grid Info Badge */}
+                            <div className="absolute top-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                                {grid.cols}×{grid.rows} Grid
+                            </div>
+
+                            {renderTextElements(sectionKey)}
                         </div>
                     );
                 }
 
                 // Custom Sections (Images)
                 const imageUrl = data.imageUrls?.[sectionKey];
-                const isPlaceholder = !imageUrl || imageUrl.includes('placeholder') || imageUrl.includes('via.placeholder');
+                const isLoading = imageUrl === 'loading'; // 스트리밍 로딩 상태
+                const isPlaceholder = !imageUrl || imageUrl.includes('placeholder') || imageUrl.includes('via.placeholder') || isLoading;
 
                 // Determine height: use explicit height if available, otherwise default logic
                 const explicitHeight = sectionHeights[sectionKey];
@@ -412,7 +755,10 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                         data-section={sectionKey}
                         ref={el => { sectionRefs.current[sectionKey] = el; }}
                         className={`relative group overflow-hidden ${isHeld ? 'border-4 border-red-500' : ''}`}
-                        style={{ minHeight: '50px', height: styleHeight, boxSizing: 'border-box' }}
+                        style={{
+                            minHeight: isPlaceholder ? '200px' : 'auto',
+                            boxSizing: 'border-box'
+                        }}
                         onDragOver={handleDragOver}
                         onDrop={(e) => handleDrop(e, sectionKey)}
                         onClick={() => isPlaceholder && handleClickUpload(sectionKey)}
@@ -420,7 +766,14 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                     >
                         {isPlaceholder ? (
                             <div className="w-full h-full border-4 border-dashed border-gray-200 flex flex-col items-center justify-center bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer box-border min-h-[200px]">
-                                {sectionKey.startsWith('spacer-') ? (
+                                {isLoading ? (
+                                    // 로딩 스피너 표시
+                                    <div className="flex flex-col items-center justify-center">
+                                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
+                                        <div className="text-blue-500 font-bold text-lg">이미지 생성 중...</div>
+                                        <div className="text-gray-400 text-sm mt-2">잠시만 기다려주세요</div>
+                                    </div>
+                                ) : sectionKey.startsWith('spacer-') ? (
                                     // Minimal placeholder for spacer
                                     <div className="text-gray-400 font-bold flex flex-col items-center">
                                         <span>여백 (높이 조절 가능)</span>
@@ -450,6 +803,15 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                                     draggable={false}
                                     onMouseDown={(e) => handleImageMouseDown(e, sectionKey)}
                                     onWheel={(e) => !isPlaceholder && handleImageWheel(e, sectionKey)}
+                                    onLoad={(e) => {
+                                        // Auto-calculate section height based on image dimensions
+                                        const img = e.currentTarget;
+                                        if (img.naturalWidth > 0 && img.naturalHeight > 0 && !sectionHeights[sectionKey]) {
+                                            const aspectRatio = img.naturalHeight / img.naturalWidth;
+                                            const calculatedHeight = 1000 * aspectRatio;
+                                            onUpdateSectionHeight(sectionKey, calculatedHeight);
+                                        }
+                                    }}
                                 />
                                 {/* Processing Overlay */}
                                 {processingSections?.has(sectionKey) && (
@@ -468,17 +830,18 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                             </div>
                         )}
                         {renderTextElements(sectionKey)}
+                        {renderLineElements(sectionKey)}
 
-                        {/* Resize Handle (Available for ALL non-hero sections) - IF EDITABLE */}
-                        {isEditable && (
+                        {/* Resize Handle - Only when editable (minimap ON or section selected) */}
+                        {!isPlaceholder && isEditable && (
                             <div
-                                className="absolute bottom-0 left-0 w-full h-4 bg-transparent hover:bg-blue-400/50 cursor-ns-resize z-50 flex items-center justify-center opacity-0 hover:opacity-100 transition-all group-hover:opacity-100"
+                                className="absolute bottom-0 left-0 w-full h-5 cursor-ns-resize z-50 flex items-center justify-center bg-gradient-to-t from-blue-500/30 to-transparent hover:from-blue-500/50 transition-all"
                                 onMouseDown={(e) => {
                                     const currentH = explicitHeight || e.currentTarget.parentElement?.clientHeight || 100;
                                     handleResizeMouseDown(e, sectionKey, currentH);
                                 }}
                             >
-                                <div className="w-12 h-1.5 bg-white border border-gray-300 rounded-full shadow-sm"></div>
+                                <div className="w-16 h-1 bg-white rounded-full shadow-sm"></div>
                             </div>
                         )}
                     </div>

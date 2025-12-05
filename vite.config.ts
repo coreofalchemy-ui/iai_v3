@@ -14,5 +14,13 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  optimizeDeps: {
+    exclude: ['ai-studio-apps']
+  },
+  build: {
+    rollupOptions: {
+      external: [/ai-studio-apps/]
+    }
   }
 });

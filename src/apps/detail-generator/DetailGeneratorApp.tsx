@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import html2canvas from 'html2canvas';
-import StartScreen from './components/StartScreen';
 import AdjustmentPanel from './components/AdjustmentPanel';
 import { PreviewPanel } from './components/PreviewPanel';
 import { NavigationMinimap } from './components/NavigationMinimap';
@@ -11,6 +11,8 @@ import { ClothingTypeSelectDialog } from './components/ClothingTypeSelectDialog'
 import { TextElement } from './components/PreviewRenderer';
 import { analyzeModelImage, detectItemType, compositeClothingItem, changeItemColor, ModelAnalysis } from './services/analyzeModel';
 import { generatePoseBatch, PoseGenerationResult } from './services/poseService';
+import { executeQuickTransferPipeline, QuickTransferPipelineOptions } from './services/quickTransferService';
+import { generateAICopywriting } from './services/geminiAICopywriter';
 
 // Helper to read file as Data URL
 const fileToDataUrl = (file: File): Promise<string> => {
@@ -45,12 +47,36 @@ const LAYOUT_TEMPLATE_HTML = `
 `;
 
 export default function DetailGeneratorApp() {
-    const [screen, setScreen] = useState<'start' | 'result'>('start');
+    const navigate = useNavigate();
+    // Start directly in result screen, bypassing StartScreen
+    const [screen, setScreen] = useState<'start' | 'result'>('result');
     const [isLoading, setLoading] = useState(false);
-    const [generatedData, setGeneratedData] = useState<any>(null);
+    // Auto-initialize with default data
+    const [generatedData, setGeneratedData] = useState<any>({
+        textContent: {},
+        specContent: {},
+        heroTextContent: {
+            productName: 'Sample Product',
+            brandLine: 'BRAND NAME',
+            subName: 'Color / Model',
+            stylingMatch: '스타일링 매치 설명이 들어갑니다.',
+            craftsmanship: '제작 공정 및 소재 설명이 들어갑니다.',
+            technology: '핵심 기술 설명이 들어갑니다.'
+        },
+        noticeContent: {},
+        imageUrls: {
+            products: [],
+            modelShots: [],
+            closeupShots: [],
+        },
+        layoutHtml: LAYOUT_TEMPLATE_HTML,
+        productFiles: [],
+        modelFiles: [],
+        sectionOrder: ['hero']
+    });
     const [activeSection, setActiveSection] = useState<string>('hero');
     const [previewHtml, setPreviewHtml] = useState<string>('');
-    const [sectionOrder, setSectionOrder] = useState<string[]>([]);
+    const [sectionOrder, setSectionOrder] = useState<string[]>(['hero']);
     const [showAIAnalysis, setShowAIAnalysis] = useState(false);
     const [isMinimapVisible, setIsMinimapVisible] = useState(true); // 기본 켜짐
 
@@ -73,6 +99,8 @@ export default function DetailGeneratorApp() {
     const [previewDevice, setPreviewDevice] = useState<'mobile' | 'tablet' | 'desktop' | 'responsive'>('mobile');
     const [previewWidth, setPreviewWidth] = useState('100%');
     const [autoScale, setAutoScale] = useState(1);
+    const [previewScale, setPreviewScale] = useState(1); // 전체 프리뷰 줌 스케일
+
 
     // Model Hold & Analysis State
     const [heldSections, setHeldSections] = useState<Set<string>>(new Set());
@@ -119,6 +147,266 @@ export default function DetailGeneratorApp() {
     // Global Edit Mode (MINIMAP toggle) - when ON, all sections can be wheel/drag edited
     const [isHoldOn, setIsHoldOn] = useState(false); // 기본 OFF
 
+    // Grid Sections State - 그리드/콜라주 섹션 데이터
+    const [gridSections, setGridSections] = useState<{
+        [sectionId: string]: {
+            cols: number;
+            rows: number;
+            height: number;
+            cells: (string | null)[]
+        }
+    }>({});
+
+    // Line Elements State - 선 요소 데이터
+    interface LineElement {
+        id: string;
+        sectionId: string;
+        type: 'straight' | 'curved' | 'angled';
+        strokeWidth: number;
+        strokeColor: string;
+        lineCap: 'round' | 'square' | 'arrow' | 'butt';
+        lineEnd: 'none' | 'arrow';
+        x1?: number;
+        y1?: number;
+        x2?: number;
+        y2?: number;
+    }
+    const [lineElements, setLineElements] = useState<LineElement[]>([]);
+
+    // AI Analysis Feature Toggles - 각 기능 끄고 키기
+    const [aiAnalysisToggles, setAiAnalysisToggles] = useState({
+        sizeGuide: true,      // SIZE GUIDE (신발 측면 스케치)
+        asInfo: true,         // A/S 안내
+        cautions: true,       // 기타 주의사항
+    });
+
+    // AI Generated Content
+    const [aiGeneratedContent, setAiGeneratedContent] = useState<{
+        sizeGuideImage?: string;   // 스케치 변환된 이미지
+        asInfo?: string;           // A/S 안내 텍스트
+        cautions?: string;         // 기타 주의사항 텍스트
+    }>({});
+
+    // Image History for Undo - 섹션별 이미지 히스토리 (되돌리기용)
+    const [imageHistory, setImageHistory] = useState<{ [sectionId: string]: string[] }>({});
+
+    // Get navigation state for shoe data
+    const location = useLocation();
+    const [initialShoesProcessed, setInitialShoesProcessed] = useState(false);
+
+    // Process shoes from navigation state on mount
+    useEffect(() => {
+        if (!initialShoesProcessed && location.state?.shoes && location.state.shoes.length > 0) {
+            const shoes = location.state.shoes as { name: string; url: string }[];
+
+            // Create sections for each shoe
+            const newSections: string[] = ['hero'];
+            const newImageUrls: { [key: string]: string } = {};
+            const newProducts: { id: string; type: string; url: string }[] = [];
+
+            // Process each shoe and calculate natural height based on image dimensions
+            const processShoes = async () => {
+                const productFilesFromBlob: File[] = [];
+
+                const heightPromises = shoes.map((shoe, idx) => {
+                    return new Promise<{ sectionId: string; height: number }>(async (resolve) => {
+                        const sectionId = `shoe-${Date.now()}-${idx}`;
+                        newSections.push(sectionId);
+                        newImageUrls[sectionId] = shoe.url;
+                        newProducts.push({
+                            id: sectionId,
+                            type: 'shoe',
+                            url: shoe.url
+                        });
+
+                        // Convert blob URL to File for productFiles display
+                        try {
+                            const response = await fetch(shoe.url);
+                            const blob = await response.blob();
+                            const file = new File([blob], shoe.name || `shoe_${idx + 1}.png`, { type: blob.type || 'image/png' });
+                            productFilesFromBlob.push(file);
+                        } catch (e) {
+                            console.error('Failed to convert blob URL to file:', e);
+                        }
+
+                        // Load image to get natural dimensions
+                        const img = new Image();
+                        img.onload = () => {
+                            // Calculate height based on 1000px width (preview panel width)
+                            const aspectRatio = img.naturalHeight / img.naturalWidth;
+                            const calculatedHeight = Math.round(1000 * aspectRatio);
+                            resolve({ sectionId, height: calculatedHeight });
+                        };
+                        img.onerror = () => {
+                            // Fallback height if image fails to load
+                            resolve({ sectionId, height: 800 });
+                        };
+                        img.src = shoe.url;
+                    });
+                });
+
+                const heights = await Promise.all(heightPromises);
+                const newHeights: { [key: string]: number } = {};
+                heights.forEach(h => {
+                    newHeights[h.sectionId] = h.height;
+                });
+
+                setGeneratedData((prev: any) => ({
+                    ...prev,
+                    imageUrls: {
+                        ...prev.imageUrls,
+                        ...newImageUrls
+                    },
+                    sectionOrder: newSections,
+                    productFiles: [...(prev.productFiles || []), ...productFilesFromBlob]
+                }));
+                setSectionOrder(newSections);
+                setSectionHeights(prev => ({ ...prev, ...newHeights }));
+                setUploadedProducts(newProducts as any);
+            };
+
+            processShoes();
+            setInitialShoesProcessed(true);
+        }
+    }, [location.state, initialShoesProcessed]);
+
+    // Process QuickTransfer options from navigation state
+    const [quickTransferProcessed, setQuickTransferProcessed] = useState(false);
+    const [quickTransferProgress, setQuickTransferProgress] = useState<{ status: string; current: number; total: number } | null>(null);
+
+    useEffect(() => {
+        console.log('=== Quick Transfer Debug ===');
+        console.log('location.state:', location.state);
+        console.log('quickTransferProcessed:', quickTransferProcessed);
+        console.log('location.state?.quickTransfer:', location.state?.quickTransfer);
+
+        if (!quickTransferProcessed && location.state?.quickTransfer) {
+            const options = location.state.quickTransfer as QuickTransferPipelineOptions;
+            console.log('Starting Quick Transfer Pipeline with options:', options);
+            setQuickTransferProcessed(true);
+            setLoading(true);
+            setQuickTransferProgress({ status: '파이프라인 시작 중...', current: 0, total: 1 });
+
+            const runPipeline = async () => {
+                try {
+                    console.log('Executing pipeline...');
+
+                    // =============================================
+                    // 1. 먼저 플레이스홀더 섹션 생성 (로딩 상태 표시)
+                    // =============================================
+                    const beautifyCount = options.beautify ? 6 : 0;
+                    const newSections: string[] = ['hero'];
+                    const newImageUrls: { [key: string]: string } = {};
+                    const newHeights: { [key: string]: number } = {};
+                    const sectionIdMap: { [key: string]: string } = {}; // type-index -> sectionId
+
+                    // 미화 섹션 플레이스홀더
+                    for (let i = 0; i < beautifyCount; i++) {
+                        const sectionId = `beautified-${Date.now()}-${i}`;
+                        newSections.push(sectionId);
+                        newImageUrls[sectionId] = 'loading'; // 로딩 표시용
+                        newHeights[sectionId] = 800;
+                        sectionIdMap[`beautify-${i}`] = sectionId;
+                    }
+
+                    // 모델컷 섹션 플레이스홀더
+                    for (let i = 0; i < options.modelCuts; i++) {
+                        const sectionId = `model-cut-${Date.now()}-${i}`;
+                        newSections.push(sectionId);
+                        newImageUrls[sectionId] = 'loading';
+                        newHeights[sectionId] = 1200;
+                        sectionIdMap[`modelCut-${i}`] = sectionId;
+                    }
+
+                    // 클로즈업 섹션 플레이스홀더
+                    for (let i = 0; i < options.closeupCuts; i++) {
+                        const sectionId = `closeup-${Date.now()}-${i}`;
+                        newSections.push(sectionId);
+                        newImageUrls[sectionId] = 'loading';
+                        newHeights[sectionId] = 800;
+                        sectionIdMap[`closeup-${i}`] = sectionId;
+                    }
+
+                    // 플레이스홀더로 UI 먼저 업데이트
+                    setGeneratedData((prev: any) => ({
+                        ...prev,
+                        imageUrls: { ...prev.imageUrls, ...newImageUrls },
+                        sectionOrder: newSections
+                    }));
+                    setSectionOrder(newSections);
+                    setSectionHeights(prev => ({ ...prev, ...newHeights }));
+
+                    // =============================================
+                    // 2. AI 카피라이팅 동시 실행 (사용자가 읽으면서 수정 가능)
+                    // =============================================
+                    const shoeUrl = options.shoes[0]?.url;
+                    if (shoeUrl) {
+                        setQuickTransferProgress({ status: 'AI 카피라이팅 분석 중...', current: 0, total: 1 });
+                        generateAICopywriting(shoeUrl).then(aiCopy => {
+                            setGeneratedData((prev: any) => ({
+                                ...prev,
+                                heroTextContent: { ...prev.heroTextContent, ...aiCopy }
+                            }));
+                        }).catch(e => console.error('AI copywriting error:', e));
+                    }
+
+                    // =============================================
+                    // 3. 이미지 스트리밍 - 생성되는대로 바로 표시
+                    // =============================================
+                    const productFilesFromBlob: File[] = [];
+
+                    const result = await executeQuickTransferPipeline(
+                        options,
+                        (status, current, total) => {
+                            console.log(`Pipeline progress: ${status} (${current}/${total})`);
+                            setQuickTransferProgress({ status, current, total });
+                        },
+                        // 스트리밍 콜백: 이미지 생성되면 즉시 UI 업데이트
+                        (type, imageUrl, index, poseName) => {
+                            const mapKey = `${type}-${index}`;
+                            const sectionId = sectionIdMap[mapKey];
+                            if (sectionId) {
+                                console.log(`🖼️ Streaming ${type} ${index + 1} to section ${sectionId}`);
+                                setGeneratedData((prev: any) => ({
+                                    ...prev,
+                                    imageUrls: {
+                                        ...prev.imageUrls,
+                                        [sectionId]: imageUrl
+                                    }
+                                }));
+                            }
+                        }
+                    );
+
+                    // 미화된 신발 이미지를 제품 파일로 변환
+                    for (let i = 0; i < result.beautifiedShoes.length; i++) {
+                        try {
+                            const response = await fetch(result.beautifiedShoes[i]);
+                            const blob = await response.blob();
+                            productFilesFromBlob.push(new File([blob], `beautified_${i + 1}.png`, { type: 'image/png' }));
+                        } catch (e) { /* ignore */ }
+                    }
+
+                    setGeneratedData((prev: any) => ({
+                        ...prev,
+                        productFiles: [...(prev.productFiles || []), ...productFilesFromBlob]
+                    }));
+
+                    setQuickTransferProgress(null);
+                    setLoading(false);
+
+                } catch (error) {
+                    console.error('Quick Transfer pipeline error:', error);
+                    setQuickTransferProgress(null);
+                    setLoading(false);
+                }
+            };
+
+            runPipeline();
+        }
+    }, [location.state, quickTransferProcessed]);
+
+
     // Close context menu on click outside
     useEffect(() => {
         const handleGlobalClick = () => {
@@ -149,10 +437,192 @@ export default function DetailGeneratorApp() {
     const handleDeviceChange = (device: 'mobile' | 'tablet' | 'desktop' | 'responsive') => {
         setPreviewDevice(device);
         switch (device) {
-            case 'mobile': setPreviewWidth('640'); break; // Mobile L
-            case 'tablet': setPreviewWidth('768'); break; // Tablet
-            case 'desktop': setPreviewWidth('1000'); break; // Desktop
+            case 'mobile': setPreviewWidth('640'); break;
+            case 'tablet': setPreviewWidth('768'); break;
+            case 'desktop': setPreviewWidth('1000'); break;
             case 'responsive': setPreviewWidth('100%'); break;
+        }
+    };
+
+    // 새로 만들기 핸들러
+    const handleNewProject = () => {
+        if (!window.confirm('현재 작업을 초기화하고 새 프로젝트를 시작하시겠습니까?')) return;
+        setGeneratedData({
+            textContent: {},
+            specContent: {},
+            heroTextContent: {
+                productName: 'New Product',
+                brandLine: 'BRAND NAME',
+                subName: 'Color / Model',
+                stylingMatch: '',
+                craftsmanship: '',
+                technology: ''
+            },
+            noticeContent: {},
+            imageUrls: { products: [], modelShots: [], closeupShots: [] },
+            layoutHtml: LAYOUT_TEMPLATE_HTML,
+            productFiles: [],
+            modelFiles: [],
+            sectionOrder: ['hero']
+        });
+        setSectionOrder(['hero']);
+        setSectionHeights({});
+        setImageTransforms({});
+        setTextElements([]);
+    };
+
+    // JPG 내보내기 핸들러
+    const handleExportJPG = async () => {
+        if (!previewRef.current) {
+            alert('프리뷰 영역을 찾을 수 없습니다.');
+            return;
+        }
+
+        const targetWidth = previewDevice === 'desktop' ? 1000 : (previewDevice === 'tablet' ? 768 : 640);
+        setLoading(true);
+
+        try {
+            // blob URL을 base64로 변환하는 함수
+            const convertBlobUrlToBase64 = async (blobUrl: string): Promise<string> => {
+                try {
+                    const response = await fetch(blobUrl);
+                    const blob = await response.blob();
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result as string);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                } catch (e) {
+                    console.error('Failed to convert blob URL:', e);
+                    return blobUrl;
+                }
+            };
+
+            // 프리뷰 내 모든 이미지를 base64로 변환
+            const images = previewRef.current.querySelectorAll('img');
+            const originalSrcs: { img: HTMLImageElement; src: string }[] = [];
+
+            for (const img of Array.from(images)) {
+                const src = img.src;
+                if (src.startsWith('blob:')) {
+                    originalSrcs.push({ img, src });
+                    try {
+                        const base64 = await convertBlobUrlToBase64(src);
+                        img.src = base64;
+                    } catch (e) {
+                        console.error('Failed to convert image:', e);
+                    }
+                }
+            }
+
+            // 잠시 대기해서 이미지 로딩 완료 대기
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            const canvas = await html2canvas(previewRef.current, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: '#ffffff',
+                width: targetWidth,
+                windowWidth: targetWidth,
+                logging: false, // 콘솔 로그 비활성화
+                imageTimeout: 15000,
+            });
+
+            // 원본 src 복원
+            originalSrcs.forEach(({ img, src }) => {
+                img.src = src;
+            });
+
+            const link = document.createElement('a');
+            link.download = `detail_page_${previewDevice}_${Date.now()}.jpg`;
+            link.href = canvas.toDataURL('image/jpeg', 0.92);
+            link.click();
+        } catch (error) {
+            console.error('JPG 내보내기 오류:', error);
+            alert('JPG 내보내기에 실패했습니다. 콘솔을 확인해주세요.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // HTML 내보내기 (이미지 base64 포함, 반응형)
+    const handleExportHTML = async () => {
+        setLoading(true);
+
+        try {
+            // blob URL을 base64로 변환하는 함수
+            const convertBlobUrlToBase64 = async (blobUrl: string): Promise<string> => {
+                if (!blobUrl.startsWith('blob:')) return blobUrl;
+                try {
+                    const response = await fetch(blobUrl);
+                    const blob = await response.blob();
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result as string);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                } catch (e) {
+                    console.error('Failed to convert blob URL:', e);
+                    return blobUrl;
+                }
+            };
+
+            // 모든 섹션 이미지를 base64로 변환
+            const convertedImages: { [key: string]: string } = {};
+            for (const sectionId of sectionOrder) {
+                if (sectionId === 'hero') continue;
+                const imageUrl = generatedData.imageUrls?.[sectionId];
+                if (imageUrl && imageUrl !== 'SPACER' && imageUrl !== 'loading') {
+                    convertedImages[sectionId] = await convertBlobUrlToBase64(imageUrl);
+                }
+            }
+
+            const htmlContent = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${generatedData.heroTextContent?.productName || 'Product Detail'}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Noto Sans KR', -apple-system, sans-serif; background: #fff; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        img { width: 100%; height: auto; display: block; }
+        .section { margin-bottom: 0; }
+        @media (max-width: 768px) {
+            .container { padding: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        ${sectionOrder.map(sectionId => {
+                if (sectionId === 'hero') return '';
+                const imageUrl = convertedImages[sectionId] || generatedData.imageUrls?.[sectionId];
+                if (imageUrl && imageUrl !== 'SPACER' && imageUrl !== 'loading') {
+                    return `<div class="section"><img src="${imageUrl}" alt="Section ${sectionId}" /></div>`;
+                }
+                return '';
+            }).join('\n        ')}
+    </div>
+</body>
+</html>`;
+
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${generatedData.heroTextContent?.productName || 'detail_page'}.html`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('HTML 내보내기 오류:', error);
+            alert('HTML 내보내기에 실패했습니다.');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -198,6 +668,75 @@ export default function DetailGeneratorApp() {
         }));
         setSectionOrder(prev => [...prev, newId]);
         setSectionHeights(prev => ({ ...prev, [newId]: 100 }));
+    };
+
+    // Add grid/collage section
+    const handleAddGridSection = (grid: { cols: number; rows: number; height: number; cells: (string | null)[] }) => {
+        const newId = `grid-${Date.now()}`;
+
+        // gridSections 상태에 추가
+        setGridSections(prev => ({
+            ...prev,
+            [newId]: {
+                cols: grid.cols,
+                rows: grid.rows,
+                height: grid.height,
+                cells: grid.cells
+            }
+        }));
+
+        // sectionOrder에 추가
+        setSectionOrder(prev => [...prev, newId]);
+
+        // 섹션 높이 설정
+        setSectionHeights(prev => ({ ...prev, [newId]: grid.height }));
+
+        console.log(`그리드 섹션 추가됨: ${newId} (${grid.cols}x${grid.rows})`);
+    };
+
+    // Update grid cell with image
+    const handleUpdateGridCell = (sectionId: string, cellIndex: number, imageUrl: string) => {
+        setGridSections(prev => {
+            const grid = prev[sectionId];
+            if (!grid) return prev;
+
+            const newCells = [...grid.cells];
+            newCells[cellIndex] = imageUrl;
+
+            return {
+                ...prev,
+                [sectionId]: {
+                    ...grid,
+                    cells: newCells
+                }
+            };
+        });
+    };
+
+    // Add line element
+    const handleAddLineElement = (line: LineElement) => {
+        // 기본 위치 설정 (프리뷰 중앙에 배치)
+        const newLine: LineElement = {
+            ...line,
+            x1: 50,
+            y1: 50,
+            x2: 200,
+            y2: 50
+        };
+        setLineElements(prev => [...prev, newLine]);
+        console.log(`선 추가됨: ${line.id} (${line.type})`);
+    };
+
+    // Delete line element
+    const handleDeleteLineElement = (id: string) => {
+        setLineElements(prev => prev.filter(l => l.id !== id));
+    };
+
+    // Update line element position (for drag functionality)
+    const handleUpdateLineElement = (id: string, updates: { x1?: number; y1?: number; x2?: number; y2?: number }) => {
+        setLineElements(prev => prev.map(line =>
+            line.id === id ? { ...line, ...updates } : line
+        ));
     };
 
     // Add section with pre-generated image (for product effects)
@@ -318,6 +857,33 @@ export default function DetailGeneratorApp() {
         });
     };
 
+    // Undo Section Handler - 섹션 이미지를 이전 상태로 되돌리기
+    const handleUndoSection = () => {
+        const sectionId = contextMenu.targetId;
+        if (!sectionId) return;
+
+        const history = imageHistory[sectionId];
+        if (!history || history.length === 0) {
+            alert('되돌릴 이전 상태가 없습니다.');
+            return;
+        }
+
+        // Pop the last image from history and restore it
+        const prevImage = history[history.length - 1];
+        setImageHistory(prev => ({
+            ...prev,
+            [sectionId]: prev[sectionId].slice(0, -1)
+        }));
+        setGeneratedData((prev: any) => ({
+            ...prev,
+            imageUrls: {
+                ...prev.imageUrls,
+                [sectionId]: prevImage
+            }
+        }));
+        setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
+    };
+
     // Product Upload Handler
     const handleProductUpload = async (file: File) => {
         setLoading(true);
@@ -373,6 +939,13 @@ export default function DetailGeneratorApp() {
         setLoading(true);
         // Add to processing sections for visual feedback
         setProcessingSections(prev => new Set([...prev, sectionId]));
+
+        // Save current image to history for undo
+        setImageHistory(prev => ({
+            ...prev,
+            [sectionId]: [...(prev[sectionId] || []), baseImageUrl]
+        }));
+
         try {
             let itemImageUrl: string;
             let itemType: string;
@@ -480,7 +1053,7 @@ export default function DetailGeneratorApp() {
         await handleCompositeImage(sectionId, { url: shoes.url, type: 'shoes' });
     };
 
-    // Color Change Handlers - Simplified: auto-detect clothing type, directly show color picker
+    // Color Change Handlers - 클릭 위치 기반으로 의류 부위 자동 감지
     const handleOpenColorPicker = () => {
         const sectionId = contextMenu.targetId;
         if (!sectionId) return;
@@ -492,20 +1065,73 @@ export default function DetailGeneratorApp() {
         }
 
         const analysis = modelAnalysis[sectionId];
-        // Auto-detect clothing type based on priority
-        const clothingPriority = ['top', 'bottom', 'shoes', 'inner', 'hat'];
-        let detectedType: string | null = null;
 
-        for (const type of clothingPriority) {
-            if (analysis.regions.find(r => r.type === type)) {
-                detectedType = type;
-                break;
+        // 클릭한 y좌표를 사용하여 의류 부위 감지
+        // contextMenu.y는 화면 y좌표이고, 이미지 내 상대적 위치를 계산해야 함
+        const sectionElement = document.querySelector(`[data-section="${sectionId}"]`) as HTMLElement;
+        let detectedType: string = 'top'; // 기본값
+
+        if (sectionElement) {
+            const rect = sectionElement.getBoundingClientRect();
+            const clickY = contextMenu.y; // 화면 y좌표
+            const relativeY = (clickY - rect.top) / rect.height; // 이미지 내 상대적 y위치 (0~1)
+
+            console.log(`🎯 클릭 위치 분석: relativeY = ${(relativeY * 100).toFixed(1)}%`);
+
+            // 상대적 y위치에 따라 의류 부위 결정
+            // 0-15%: 머리/모자 영역
+            // 15-40%: 상의 영역
+            // 40-75%: 하의/치마 영역
+            // 75-100%: 신발/양말 영역
+
+            if (relativeY <= 0.15) {
+                // 머리 영역 - 모자 확인
+                if (analysis.regions.find(r => r.type === 'hat')) {
+                    detectedType = 'hat';
+                } else if (analysis.regions.find(r => r.type === 'top')) {
+                    detectedType = 'top';
+                }
+            } else if (relativeY <= 0.40) {
+                // 상체 영역 - 상의
+                if (analysis.regions.find(r => r.type === 'top')) {
+                    detectedType = 'top';
+                } else if (analysis.regions.find(r => r.type === 'inner')) {
+                    detectedType = 'inner';
+                }
+            } else if (relativeY <= 0.75) {
+                // 하체 영역 - 바지/치마
+                if (analysis.regions.find(r => r.type === 'bottom')) {
+                    detectedType = 'bottom';
+                } else if (analysis.regions.find(r => r.type === 'skirt')) {
+                    detectedType = 'skirt';
+                } else if (analysis.regions.find(r => r.type === 'pants')) {
+                    detectedType = 'pants';
+                } else if (analysis.regions.find(r => r.type === 'top')) {
+                    // 긴 상의인 경우
+                    detectedType = 'top';
+                }
+            } else {
+                // 발 영역 - 신발/양말
+                if (analysis.regions.find(r => r.type === 'shoes')) {
+                    detectedType = 'shoes';
+                } else if (analysis.regions.find(r => r.type === 'socks')) {
+                    detectedType = 'socks';
+                } else if (analysis.regions.find(r => r.type === 'bottom')) {
+                    // 긴 바지인 경우
+                    detectedType = 'bottom';
+                }
             }
-        }
 
-        if (!detectedType) {
-            // Fallback to 'top' if no clothing detected
-            detectedType = 'top';
+            console.log(`✅ 감지된 의류: ${detectedType} (클릭 위치: ${(relativeY * 100).toFixed(1)}%)`);
+        } else {
+            // 섹션 요소를 찾을 수 없는 경우 기존 우선순위 방식 사용
+            const clothingPriority = ['top', 'bottom', 'shoes', 'inner', 'hat'];
+            for (const type of clothingPriority) {
+                if (analysis.regions.find(r => r.type === type)) {
+                    detectedType = type;
+                    break;
+                }
+            }
         }
 
         setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
@@ -820,7 +1446,7 @@ export default function DetailGeneratorApp() {
                 <div className="flex items-center gap-3">
                     {screen === 'result' && (
                         <button
-                            onClick={() => setScreen('start')}
+                            onClick={() => navigate('/')}
                             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             title="뒤로가기"
                         >
@@ -841,37 +1467,47 @@ export default function DetailGeneratorApp() {
                 <div className="flex items-center gap-2">
                     {screen === 'result' && (
                         <button
-                            onClick={() => setScreen('start')}
-                            className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                            onClick={handleNewProject}
+                            className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-md transition-colors border border-gray-200"
                         >
-                            새로 만들기
+                            + 새로 만들기
                         </button>
                     )}
                     <button
-                        onClick={() => {
-                            // Export HTML logic
-                            const blob = new Blob([previewHtml], { type: 'text/html' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = 'detail_page.html';
-                            a.click();
-                        }}
+                        onClick={handleExportHTML}
+                        className="px-3 py-1.5 bg-white border border-purple-300 text-purple-600 text-sm font-bold rounded-md hover:bg-purple-50 transition-colors"
+                    >
+                        HTML
+                    </button>
+                    <button
+                        onClick={handleExportJPG}
                         className="px-4 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-bold rounded-md hover:opacity-90 transition-opacity shadow-sm"
                     >
-                        HTML 내보내기
+                        JPG ({previewDevice === 'mobile' ? '640px' : previewDevice === 'tablet' ? '768px' : '1000px'})
                     </button>
                 </div>
             </header>
 
-            <main className="flex-grow overflow-hidden relative">
-                {screen === 'start' && (
-                    <div className="h-full overflow-y-auto p-4">
-                        <StartScreen onGenerate={handleGenerate} isLoading={isLoading} />
+            {/* Quick Transfer Loading Overlay */}
+            {quickTransferProgress && (
+                <div className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center">
+                    <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4 text-center">
+                        <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
+                        <h3 className="text-xl font-bold text-gray-800 mb-2">Quick Transfer 생성 중</h3>
+                        <p className="text-gray-600 mb-4">{quickTransferProgress.status}</p>
+                        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                            <div
+                                className="h-full bg-gradient-to-r from-purple-600 to-pink-600 transition-all duration-300"
+                                style={{ width: `${(quickTransferProgress.current / quickTransferProgress.total) * 100}%` }}
+                            />
+                        </div>
+                        <p className="text-sm text-gray-500 mt-2">{quickTransferProgress.current} / {quickTransferProgress.total}</p>
                     </div>
-                )}
+                </div>
+            )}
 
-                {screen === 'result' && generatedData && (
+            <main className="flex-grow overflow-hidden relative">
+                {generatedData && (
                     <div className="flex h-full">
                         {/* Left Panel Wrapper */}
                         <div className="w-[420px] border-r bg-white hidden md:flex flex-col relative z-10 flex-shrink-0 h-full shadow-xl">
@@ -888,60 +1524,86 @@ export default function DetailGeneratorApp() {
                                     onDeleteTextElement={handleDeleteTextElement}
                                     onAddSpacerSection={handleAddSpacerSection}
                                     onAddSectionWithImage={handleAddSectionWithImage}
+                                    onAddGridSection={handleAddGridSection}
+                                    onAddLineElement={handleAddLineElement}
                                 />
                             </div>
                         </div>
 
                         {/* Middle Panel */}
                         <div ref={middlePanelRef} className="flex-grow h-full bg-gray-100 overflow-hidden relative flex flex-col">
-                            {/* Responsive Toolbar */}
-                            <div className="h-12 bg-white border-b flex items-center justify-center gap-4 px-4 shadow-sm z-20">
-                                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Preview Mode:</span>
-                                <div className="flex bg-gray-100 rounded-lg p-1">
+                            {/* Responsive Toolbar with Zoom Controls */}
+                            <div className="h-11 bg-white border-b flex items-center justify-center gap-6 px-4 shadow-sm z-20 flex-shrink-0">
+                                {/* Zoom Controls */}
+                                <div className="flex items-center gap-1 bg-gray-100 rounded-md px-1 py-0.5">
                                     <button
-                                        onClick={() => handleDeviceChange('mobile')}
-                                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${previewDevice === 'mobile' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-                                    >
-                                        📱 Mobile L (640px)
-                                    </button>
+                                        onClick={() => setPreviewScale(prev => Math.max(0.2, prev - 0.1))}
+                                        className="w-6 h-6 flex items-center justify-center text-gray-600 hover:bg-white rounded"
+                                    >−</button>
+                                    <span className="text-[11px] font-bold text-gray-600 w-10 text-center">{Math.round(previewScale * 100)}%</span>
                                     <button
-                                        onClick={() => handleDeviceChange('tablet')}
-                                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${previewDevice === 'tablet' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-                                    >
-                                        Tablet (768px)
-                                    </button>
+                                        onClick={() => setPreviewScale(prev => Math.min(1.5, prev + 0.1))}
+                                        className="w-6 h-6 flex items-center justify-center text-gray-600 hover:bg-white rounded"
+                                    >+</button>
+                                    <div className="w-px h-4 bg-gray-300 mx-0.5" />
                                     <button
-                                        onClick={() => handleDeviceChange('desktop')}
-                                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${previewDevice === 'desktop' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-                                    >
-                                        💻 Desktop (Full)
-                                    </button>
+                                        onClick={() => setPreviewScale(0.5)}
+                                        className="px-1.5 py-0.5 text-[10px] text-purple-600 hover:bg-purple-50 rounded font-bold"
+                                    >전체</button>
+                                    <button
+                                        onClick={() => setPreviewScale(1)}
+                                        className="px-1.5 py-0.5 text-[10px] text-blue-600 hover:bg-blue-50 rounded font-bold"
+                                    >100%</button>
                                 </div>
-                                {previewDevice === 'responsive' && (
-                                    <div className="flex items-center gap-2 border-l pl-4 ml-2">
-                                        <span className="text-xs text-gray-500">Width:</span>
-                                        <input
-                                            type="text"
-                                            value={previewWidth}
-                                            onChange={(e) => setPreviewWidth(e.target.value)}
-                                            className="w-20 border rounded px-2 py-1 text-xs text-center"
-                                        />
+
+                                <div className="w-px h-6 bg-gray-200" />
+
+                                {/* Device Selector */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-gray-400 uppercase">Preview:</span>
+                                    <div className="flex bg-gray-100 rounded-md p-0.5">
+                                        <button
+                                            onClick={() => handleDeviceChange('mobile')}
+                                            className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${previewDevice === 'mobile' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                                        >
+                                            📱 Mobile
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeviceChange('tablet')}
+                                            className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${previewDevice === 'tablet' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                                        >
+                                            📱 Tablet
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeviceChange('desktop')}
+                                            className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${previewDevice === 'desktop' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                                        >
+                                            💻 Desktop
+                                        </button>
                                     </div>
-                                )}
+                                </div>
                             </div>
 
                             {/* Preview Area */}
                             <div
-                                className={`flex-grow flex justify-center overflow-y-auto bg-gray-100 p-8 pb-32 custom-scrollbar`}
+                                className={`flex-grow flex justify-center overflow-auto bg-gray-100 p-8 pb-32 custom-scrollbar`}
                                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                 onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                onWheel={(e) => {
+                                    // Ctrl 또는 Meta 키와 함께 휠 시 전체 프리뷰 줌
+                                    if (e.ctrlKey || e.metaKey) {
+                                        e.preventDefault();
+                                        const delta = e.deltaY > 0 ? -0.05 : 0.05;
+                                        setPreviewScale(prev => Math.max(0.2, Math.min(1.5, prev + delta)));
+                                    }
+                                }}
                             >
                                 <div
-                                    className={`bg-white transition-all duration-300 ease-in-out origin-top ${previewDevice === 'desktop' ? 'shadow-lg my-8' : 'shadow-2xl'}`}
+                                    className={`bg-white transition-all duration-300 ease-in-out shadow-2xl origin-top`}
                                     style={{
-                                        width: '1000px', // Always fixed base width
+                                        width: previewDevice === 'desktop' ? '1000px' : previewDevice === 'tablet' ? '768px' : '640px',
                                         minHeight: '100%',
-                                        transform: `scale(${previewWidth === '100%' ? autoScale : parseInt(previewWidth) / 1000})`,
+                                        transform: `scale(${previewScale})`,
                                         transformOrigin: 'top center',
                                     }}
                                 >
@@ -977,6 +1639,11 @@ export default function DetailGeneratorApp() {
                                         onForceEdit={handleForceEdit}
                                         onCancelForceEdit={handleCancelForceEdit}
                                         processingSections={processingSections}
+                                        gridSections={gridSections}
+                                        onUpdateGridCell={handleUpdateGridCell}
+                                        lineElements={lineElements}
+                                        onUpdateLineElement={handleUpdateLineElement}
+                                        onDeleteLineElement={handleDeleteLineElement}
                                     />
                                 </div>
                             </div>
@@ -1043,6 +1710,8 @@ export default function DetailGeneratorApp() {
                 onGenerateCloseUp={() => handleOpenPoseDialog('closeup')}
                 onWearShoes={handleWearShoes}
                 onChangeColor={handleOpenColorPicker}
+                onUndo={handleUndoSection}
+                canUndo={contextMenu.targetId ? (imageHistory[contextMenu.targetId]?.length || 0) > 0 : false}
                 onDelete={() => {
                     if (!contextMenu.targetId) return;
                     // Delete the section directly

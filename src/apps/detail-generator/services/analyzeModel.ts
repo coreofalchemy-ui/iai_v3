@@ -34,7 +34,7 @@ const SAFETY_SETTINGS = [
     { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
 ];
 
-const MODEL_NAME = 'gemini-2.0-flash-exp';
+const MODEL_NAME = 'gemini-3-pro-image-preview';
 
 /**
  * Analyze model image to detect clothing item positions using Gemini Vision
@@ -273,29 +273,36 @@ export async function changeItemColor(params: {
         ? `Target region: x=${(targetRegion.bbox.x * 100).toFixed(1)}%, y=${(targetRegion.bbox.y * 100).toFixed(1)}%, width=${(targetRegion.bbox.width * 100).toFixed(1)}%, height=${(targetRegion.bbox.height * 100).toFixed(1)}%`
         : '';
 
-    const prompt = `[TASK: CLOTHING COLOR CHANGE]
+    const prompt = `[TASK: PRECISE CLOTHING COLOR CHANGE]
 
 You are given an image of a fashion model.
 
-[CRITICAL INSTRUCTION]
-Change the color of the ${typeName} to ${colorName} (${targetColor}).
+[CRITICAL: SIZE LOCK]
+OUTPUT IMAGE DIMENSIONS MUST BE EXACTLY THE SAME AS INPUT.
+DO NOT crop, resize, or change the aspect ratio.
+This is an EDIT to the existing image, not a new generation.
 
-[RULES]
-1. **IDENTITY LOCK**: Keep the model's face 100% identical
-2. **POSE LOCK**: Keep the model's pose exactly the same  
-3. **OTHER ITEMS LOCK**: Keep all other clothing items UNCHANGED
-4. **BACKGROUND LOCK**: Keep the background exactly the same
-5. **FABRIC TEXTURE LOCK**: Keep the texture, pattern, and material of the ${typeName} the same, only change the color
-6. **NATURAL LOOK**: The color change must look natural and realistic
-7. **LIGHTING MATCH**: Adjust the color to match the lighting conditions in the image
+[CRITICAL INSTRUCTION]
+Change ONLY the color of the ${typeName} to ${colorName} (${targetColor}).
 
 ${regionInfo}
 
+[STRICT RULES]
+1. **SIZE LOCK**: Output dimensions = Input dimensions EXACTLY
+2. **IDENTITY LOCK**: Model's face must be 100% IDENTICAL
+3. **POSE LOCK**: Pose must be EXACTLY the same
+4. **OTHER ITEMS LOCK**: ALL other clothing items UNCHANGED
+5. **BACKGROUND LOCK**: Background must be PIXEL-IDENTICAL
+6. **TEXTURE LOCK**: Fabric texture, pattern, material UNCHANGED - only color changes
+7. **PRECISE TARGETING**: Change color ONLY within the specified ${typeName} region
+8. **LIGHTING MATCH**: Color must blend naturally with lighting conditions
+9. **NO SIDE EFFECTS**: Do NOT alter ANYTHING except the ${typeName} color
+
 [TARGET COLOR]
-Change the ${typeName} to: ${colorName} (HEX: ${targetColor})
+${typeName}: Change to ${colorName} (HEX: ${targetColor})
 
 [OUTPUT]
-Generate a single photo-realistic fashion image with the ${typeName} color changed to ${colorName}.`;
+Photo-realistic image with ONLY the ${typeName} color changed. Everything else IDENTICAL to input.`;
 
     try {
         const ai = getAI();

@@ -23,7 +23,7 @@ export interface CopywritingOutput {
  * 5단계 설득형 카피라이팅 구조로 제품 이미지를 분석합니다.
  */
 export async function generateAICopywriting(imageDataUrl: string): Promise<CopywritingOutput> {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3-pro-image-preview' });
 
     const prompt = `당신은 명품 패션 브랜드의 수석 카피라이터입니다. 
 제품 이미지를 **정밀 분석**하여 구매 전환율을 높이는 **상세페이지 카피**를 작성하세요.

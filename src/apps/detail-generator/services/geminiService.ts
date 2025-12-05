@@ -1,8 +1,8 @@
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold, Modality } from "@google/genai";
 import { UploadedImage, LookbookImage, ModelGender, ModelAge, ModelEthnicity, ProductDetailInfo, AutoFilledProductInfo } from "../types";
 import { urlToBase64 } from "./faceService";
 
-// Use the model that works in Studio
+// Use Gemini 3 Pro Image Preview (Nano Banana Pro) for image generation
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 
 const getApiKey = (): string | undefined => {

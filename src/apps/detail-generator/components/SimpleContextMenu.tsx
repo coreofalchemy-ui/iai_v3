@@ -13,6 +13,8 @@ type Props = {
     onGeneratePose?: () => void;
     onGenerateCloseUp?: () => void;
     onChangeColor?: () => void;
+    onUndo?: () => void;
+    canUndo?: boolean;
 };
 
 export const SimpleContextMenu: React.FC<Props> = ({
@@ -28,6 +30,8 @@ export const SimpleContextMenu: React.FC<Props> = ({
     onGeneratePose,
     onGenerateCloseUp,
     onChangeColor,
+    onUndo,
+    canUndo,
 }) => {
     if (!visible) return null;
 
@@ -127,6 +131,24 @@ export const SimpleContextMenu: React.FC<Props> = ({
                     <span>🎨</span>
                     <span>색상 변경</span>
                     <span className="ml-auto text-xs text-pink-400">AI Color</span>
+                </button>
+            )}
+            {/* Undo Button - 되돌리기 */}
+            {onUndo && (
+                <button
+                    className={`w-full text-left px-4 py-2.5 font-semibold flex items-center gap-2 border-b border-gray-100 ${canUndo
+                            ? 'hover:bg-yellow-50 text-yellow-600'
+                            : 'opacity-50 cursor-not-allowed text-gray-400'
+                        }`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (canUndo) onUndo();
+                    }}
+                    disabled={!canUndo}
+                >
+                    <span>↩️</span>
+                    <span>되돌리기</span>
+                    {!canUndo && <span className="ml-auto text-xs text-gray-400">없음</span>}
                 </button>
             )}
             {onDelete && (
