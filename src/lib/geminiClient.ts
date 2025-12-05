@@ -1,37 +1,34 @@
 import { supabase } from './supabase';
 
 /**
- * 서버사이드 Gemini API 호출 클라이언트
- * API 키는 서버에만 있고, 브라우저에서는 절대 접근 불가
+ * 🔐 보안 Gemini API 프록시
+ * 
+ * 이 모듈은 기존 코드의 GoogleGenAI 호출을 대체합니다.
+ * 모든 API 요청은 서버리스 함수(/api/gemini)를 통해 처리되며,
+ * API 키는 서버에서만 사용됩니다.
  */
 
-interface GeminiImagePart {
-    data: string; // base64 (prefix 제외)
+const API_ENDPOINT = '/api/gemini';
+
+export interface GeminiImagePart {
+    data: string;
     mimeType: string;
 }
 
-interface GeminiRequest {
-    action: 'generateImage' | 'generateText' | 'analyzeImage';
-    prompt: string;
-    images?: GeminiImagePart[];
-    config?: {
-        aspectRatio?: string;
-        imageSize?: string;
-    };
+export interface GeminiConfig {
+    aspectRatio?: string;
+    imageSize?: string;
 }
 
-interface GeminiResponse {
+export interface GeminiResponse {
     type: 'image' | 'text';
     data: string;
 }
 
-// API 엔드포인트 (Vercel 배포 시 자동으로 /api/gemini로 매핑)
-const API_ENDPOINT = '/api/gemini';
-
 /**
- * base64 데이터 URL에서 prefix 제거
+ * base64 데이터 URL에서 순수 base64 데이터 추출
  */
-function stripBase64Prefix(dataUrl: string): { data: string; mimeType: string } {
+export function extractBase64(dataUrl: string): GeminiImagePart {
     if (dataUrl.includes('base64,')) {
         const [prefix, data] = dataUrl.split('base64,');
         const mimeMatch = prefix.match(/data:([^;]+)/);
@@ -44,23 +41,42 @@ function stripBase64Prefix(dataUrl: string): { data: string; mimeType: string } 
 }
 
 /**
- * 서버사이드 Gemini API 호출
+ * Supabase 세션 토큰 가져오기
  */
-export async function callGeminiAPI(request: GeminiRequest): Promise<GeminiResponse> {
-    // 현재 세션에서 JWT 토큰 가져오기
+async function getAuthToken(): Promise<string> {
     const { data: { session } } = await supabase.auth.getSession();
-
     if (!session) {
-        throw new Error('인증이 필요합니다. 다시 로그인해주세요.');
+        throw new Error('AUTH_ERROR: 로그인이 필요합니다.');
     }
+    return session.access_token;
+}
+
+/**
+ * 🔐 보안 Gemini API 호출
+ * 
+ * 서버리스 함수를 통해 Gemini API를 호출합니다.
+ * API 키는 서버에서만 사용되어 브라우저에 노출되지 않습니다.
+ */
+export async function callGeminiSecure(
+    prompt: string,
+    images: GeminiImagePart[] = [],
+    config?: GeminiConfig,
+    systemInstruction?: string
+): Promise<GeminiResponse> {
+    const token = await getAuthToken();
 
     const response = await fetch(API_ENDPOINT, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
+            'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify({
+            prompt,
+            images,
+            config,
+            systemInstruction,
+        }),
     });
 
     if (!response.ok) {
@@ -72,21 +88,16 @@ export async function callGeminiAPI(request: GeminiRequest): Promise<GeminiRespo
 }
 
 /**
- * 이미지 생성 (편의 함수)
+ * 이미지 생성 (보안 버전)
  */
-export async function generateImage(
+export async function generateImageSecure(
     prompt: string,
     referenceImages: string[] = [],
-    config?: { aspectRatio?: string; imageSize?: string }
+    config?: GeminiConfig
 ): Promise<string> {
-    const images = referenceImages.map(img => stripBase64Prefix(img));
+    const images = referenceImages.map(img => extractBase64(img));
 
-    const result = await callGeminiAPI({
-        action: 'generateImage',
-        prompt,
-        images,
-        config,
-    });
+    const result = await callGeminiSecure(prompt, images, config);
 
     if (result.type !== 'image') {
         throw new Error('이미지 생성에 실패했습니다.');
@@ -96,35 +107,61 @@ export async function generateImage(
 }
 
 /**
- * 이미지 분석 (편의 함수)
+ * 이미지 분석 (보안 버전)
  */
-export async function analyzeImage(
+export async function analyzeImageSecure(
     imageUrl: string,
     prompt: string
 ): Promise<string> {
-    const { data, mimeType } = stripBase64Prefix(imageUrl);
+    const image = extractBase64(imageUrl);
 
-    const result = await callGeminiAPI({
-        action: 'analyzeImage',
-        prompt,
-        images: [{ data, mimeType }],
-    });
-
-    if (result.type !== 'text') {
-        throw new Error('이미지 분석에 실패했습니다.');
-    }
+    const result = await callGeminiSecure(prompt, [image]);
 
     return result.data;
 }
 
 /**
- * 텍스트 생성 (편의 함수)
+ * 텍스트 생성 (보안 버전)
  */
-export async function generateText(prompt: string): Promise<string> {
-    const result = await callGeminiAPI({
-        action: 'generateText',
-        prompt,
-    });
-
+export async function generateTextSecure(
+    prompt: string,
+    systemInstruction?: string
+): Promise<string> {
+    const result = await callGeminiSecure(prompt, [], undefined, systemInstruction);
     return result.data;
+}
+
+/**
+ * 다중 이미지 처리 (보안 버전)
+ */
+export async function processWithImagesSecure(
+    prompt: string,
+    imageUrls: string[],
+    config?: GeminiConfig,
+    systemInstruction?: string
+): Promise<GeminiResponse> {
+    const images = imageUrls.map(img => extractBase64(img));
+    return callGeminiSecure(prompt, images, config, systemInstruction);
+}
+
+/**
+ * URL에서 이미지 로드 후 base64로 변환
+ */
+export async function urlToBase64(url: string): Promise<string> {
+    if (url.startsWith('data:')) {
+        return url.includes('base64,') ? url.split('base64,')[1] : url;
+    }
+
+    const response = await fetch(url);
+    const blob = await response.blob();
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const result = reader.result as string;
+            resolve(result.includes('base64,') ? result.split('base64,')[1] : result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
 }

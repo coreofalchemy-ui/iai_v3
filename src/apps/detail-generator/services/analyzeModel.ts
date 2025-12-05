@@ -1,8 +1,17 @@
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+/**
+ * 🔐 보안 Analyze Model 서비스
+ * 모든 API 호출은 서버리스 함수를 통해 처리됩니다.
+ */
+
+import { callGeminiSecure, urlToBase64 } from '../../../lib/geminiClient';
 
 export interface ClothingRegion {
     type: 'face' | 'hat' | 'glasses' | 'top' | 'inner' | 'bottom' | 'shoes';
     bbox: { x: number; y: number; width: number; height: number };
+    x: number;
+    y: number;
+    width: number;
+    height: number;
     angle: number;
     confidence: number;
 }
@@ -13,148 +22,89 @@ export interface ModelAnalysis {
     analyzedAt: number;
 }
 
-// API Key helper (same as geminiService.ts)
-const getApiKey = (): string | undefined => {
-    if (import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
-    if (typeof process !== 'undefined' && process.env?.API_KEY) return process.env.API_KEY;
-    if (typeof window !== 'undefined' && (window as any).aistudio?.getApiKey) return (window as any).aistudio.getApiKey();
-    return undefined;
-};
-
-const getAI = () => {
-    const apiKey = getApiKey();
-    if (!apiKey) throw new Error("AUTH_ERROR: API 키가 없습니다.");
-    return new GoogleGenAI({ apiKey });
-};
-
-const SAFETY_SETTINGS = [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-];
-
-const MODEL_NAME = 'gemini-3-pro-image-preview';
-
 /**
- * Analyze model image to detect clothing item positions using Gemini Vision
+ * 🔐 모델 이미지 분석 - 보안 버전
  */
 export async function analyzeModelImage(imageUrl: string): Promise<ModelAnalysis> {
-    const prompt = `Analyze this fashion model image and detect the bounding box and angle for each visible clothing item and body part.
+    console.log('🔐 analyzeModelImage (SECURE) called');
 
-Return ONLY valid JSON in this exact format (no markdown, no explanation):
+    const base64 = await urlToBase64(imageUrl);
+
+    const prompt = `Analyze this fashion model image and detect positions of clothing items.
+
+For each detected item, provide:
+- type: one of ["face", "hat", "glasses", "top", "inner", "bottom", "shoes"]
+- x, y: normalized coordinates (0-1) of the item center
+- width, height: normalized dimensions (0-1)
+- angle: rotation angle in degrees
+- confidence: detection confidence (0-1)
+
+Respond in JSON format:
 {
-  "regions": [
-    {"type": "face", "bbox": {"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0}, "angle": 0, "confidence": 0.0}
-  ]
-}
-
-Rules:
-- Bounding box coordinates (x, y, width, height) are normalized 0-1 relative to image dimensions
-- x, y is top-left corner of bbox
-- angle is rotation in degrees (-180 to 180)
-- confidence is 0-1
-- Include only visible items from: face, hat, glasses, top, inner, bottom, shoes
-  - 'glasses' means eyeglasses or sunglasses
-  - 'inner' means visible innerwear/undershirt under outerwear
-- Omit items not visible or not applicable
-- Output ONLY the JSON, no other text`;
+    "regions": [
+        {"type": "face", "x": 0.5, "y": 0.15, "width": 0.2, "height": 0.15, "angle": 0, "confidence": 0.95},
+        {"type": "top", "x": 0.5, "y": 0.4, "width": 0.4, "height": 0.25, "angle": 0, "confidence": 0.9}
+    ]
+}`;
 
     try {
-        const ai = getAI();
-        const base64 = imageUrl.includes('base64,') ? imageUrl.split('base64,')[1] : imageUrl;
+        const result = await callGeminiSecure(
+            prompt,
+            [{ data: base64, mimeType: 'image/jpeg' }]
+        );
 
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: {
-                parts: [
-                    { inlineData: { data: base64, mimeType: 'image/jpeg' } },
-                    { text: prompt }
-                ]
-            },
-            config: {
-                // @ts-ignore
-                safetySettings: SAFETY_SETTINGS
-            }
-        });
-
-        const text = response.text?.trim() || '';
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        const jsonText = jsonMatch ? jsonMatch[0] : text;
-        const json = JSON.parse(jsonText);
-
-        console.log('✅ Model analysis complete:', json.regions?.length || 0, 'regions found');
+        const parsed = JSON.parse(result.data);
+        const regions = (parsed.regions || []).map((r: any) => ({
+            ...r,
+            bbox: { x: r.x, y: r.y, width: r.width, height: r.height }
+        }));
 
         return {
             imageUrl,
-            regions: json.regions || [],
+            regions,
             analyzedAt: Date.now()
         };
-    } catch (error) {
-        console.error('Model analysis failed:', error);
-        throw error;
+    } catch (e) {
+        console.error('Failed to analyze model image:', e);
+        return { imageUrl, regions: [], analyzedAt: Date.now() };
     }
 }
 
 /**
- * Detect what type of clothing item is in the dropped image
+ * 🔐 아이템 유형 감지 - 보안 버전
  */
 export async function detectItemType(imageUrl: string): Promise<string> {
-    const prompt = `What type of clothing item or body part is primarily shown in this image?
+    console.log('🔐 detectItemType (SECURE) called');
 
-Respond with ONLY ONE of these exact words (no explanation):
-- face
+    const base64 = await urlToBase64(imageUrl);
+
+    const prompt = `What type of clothing item is in this image?
+Respond with ONLY one word from this list:
 - hat
 - glasses
 - top
 - inner
 - bottom
 - shoes
-
-Note:
-- 'glasses' means eyeglasses or sunglasses
-- 'inner' means innerwear/undershirt
-
-Choose the most prominent item in the image.`;
+- unknown`;
 
     try {
-        const ai = getAI();
-        const base64 = imageUrl.includes('base64,') ? imageUrl.split('base64,')[1] : imageUrl;
+        const result = await callGeminiSecure(
+            prompt,
+            [{ data: base64, mimeType: 'image/jpeg' }]
+        );
 
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: {
-                parts: [
-                    { inlineData: { data: base64, mimeType: 'image/jpeg' } },
-                    { text: prompt }
-                ]
-            },
-            config: {
-                // @ts-ignore
-                safetySettings: SAFETY_SETTINGS
-            }
-        });
-
-        const text = response.text?.trim().toLowerCase() || '';
-        const validTypes = ['face', 'hat', 'glasses', 'top', 'inner', 'bottom', 'shoes'];
-
-        for (const type of validTypes) {
-            if (text.includes(type)) {
-                console.log('✅ Detected item type:', type);
-                return type;
-            }
-        }
-
-        console.log('⚠️ Could not detect type, defaulting to "top"');
-        return 'top'; // Default fallback
-    } catch (error) {
-        console.error('Item type detection failed:', error);
-        throw error;
+        const type = result.data.trim().toLowerCase();
+        const validTypes = ['hat', 'glasses', 'top', 'inner', 'bottom', 'shoes'];
+        return validTypes.includes(type) ? type : 'unknown';
+    } catch (e) {
+        console.error('Failed to detect item type:', e);
+        return 'unknown';
     }
 }
 
 /**
- * Composite clothing item onto model using Gemini Vision API
+ * 🔐 의류 아이템 합성 - 보안 버전
  */
 export async function compositeClothingItem(params: {
     baseImage: string;
@@ -162,91 +112,43 @@ export async function compositeClothingItem(params: {
     itemType: string;
     targetRegion: ClothingRegion;
 }): Promise<string> {
-    const { baseImage, itemImage, itemType, targetRegion } = params;
+    console.log(`🔐 compositeClothingItem (SECURE): ${params.itemType}`);
 
-    const typeNames: Record<string, string> = {
-        'face': '얼굴',
-        'hat': '모자',
-        'glasses': '안경/선글라스',
-        'top': '상의',
-        'inner': '내의',
-        'bottom': '하의',
-        'shoes': '신발'
-    };
+    const baseB64 = await urlToBase64(params.baseImage);
+    const itemB64 = await urlToBase64(params.itemImage);
 
-    const typeName = typeNames[itemType] || itemType;
+    const prompt = `// --- TASK: CLOTHING_COMPOSITE (SECURE) ---
+// Replace the ${params.itemType} on the model with the provided item.
 
-    const prompt = `[TASK: CLOTHING ITEM REPLACEMENT]
+**[CRITICAL RULES]**
+1. Keep model's face, body, and pose IDENTICAL
+2. Replace ONLY the ${params.itemType} region
+3. Maintain realistic lighting and shadows
+4. Ensure seamless integration
+5. Keep background unchanged
 
-You are given TWO images:
-- Image 1: A fashion model wearing clothes (BASE IMAGE)
-- Image 2: A ${typeName} item to be placed on the model (ITEM IMAGE)
+Target region: x=${params.targetRegion.x}, y=${params.targetRegion.y}
 
-[CRITICAL INSTRUCTION]
-Replace the ${typeName} on the model with the item from Image 2.
+BASE_IMAGE: [First image]
+ITEM_IMAGE: [Second image]`;
 
-[RULES]
-1. **IDENTITY LOCK**: Keep the model's face 100% identical
-2. **POSE LOCK**: Keep the model's pose exactly the same
-3. **SEAMLESS FIT**: The new ${typeName} must fit naturally on the model's body
-4. **MATCH LIGHTING**: Match the lighting, shadows, and color temperature
-5. **OTHER ITEMS LOCK**: Keep all other clothing items unchanged
-6. **BACKGROUND LOCK**: Keep the background exactly the same
+    const result = await callGeminiSecure(
+        prompt,
+        [
+            { data: baseB64, mimeType: 'image/png' },
+            { data: itemB64, mimeType: 'image/png' }
+        ]
+    );
 
-[TARGET REGION]
-The ${typeName} should be placed at:
-- Position: x=${(targetRegion.bbox.x * 100).toFixed(1)}%, y=${(targetRegion.bbox.y * 100).toFixed(1)}%
-- Size: ${(targetRegion.bbox.width * 100).toFixed(1)}% x ${(targetRegion.bbox.height * 100).toFixed(1)}%
-- Angle: ${targetRegion.angle} degrees
-
-[OUTPUT]
-Generate a single photo-realistic fashion image with the replaced ${typeName}.`;
-
-    try {
-        const ai = getAI();
-        const baseB64 = baseImage.includes('base64,') ? baseImage.split('base64,')[1] : baseImage;
-        const itemB64 = itemImage.includes('base64,') ? itemImage.split('base64,')[1] : itemImage;
-
-        console.log(`🎨 Compositing ${typeName} onto model...`);
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-image-preview', // Use image generation model
-            contents: {
-                parts: [
-                    { inlineData: { data: baseB64, mimeType: 'image/jpeg' } },
-                    { inlineData: { data: itemB64, mimeType: 'image/jpeg' } },
-                    { text: prompt }
-                ]
-            },
-            config: {
-                // @ts-ignore
-                imageConfig: { aspectRatio: '3:4', imageSize: '1K' },
-                safetySettings: SAFETY_SETTINGS
-            }
-        });
-
-        // Extract image from response
-        for (const candidate of response.candidates || []) {
-            for (const part of candidate.content?.parts || []) {
-                if (part.inlineData) {
-                    console.log('✅ Composite image generated successfully');
-                    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                }
-            }
-        }
-
-        console.warn('⚠️ No image in response, returning original');
-        return baseImage;
-
-    } catch (error) {
-        console.error('Compositing failed:', error);
-        // Fallback to original image on error so the app doesn't break
-        return baseImage;
+    if (result.type !== 'image') {
+        throw new Error('Composite failed');
     }
+
+    return result.data;
 }
 
 /**
- * Change the color of a specific clothing item on a model image
+ * 🔐 아이템 색상 변경 - 보안 버전
  */
 export async function changeItemColor(params: {
     baseImage: string;
@@ -255,91 +157,30 @@ export async function changeItemColor(params: {
     colorName: string;
     targetRegion?: ClothingRegion;
 }): Promise<string> {
-    const { baseImage, itemType, targetColor, colorName, targetRegion } = params;
+    console.log(`🔐 changeItemColor (SECURE): ${params.itemType} to ${params.colorName}`);
 
-    const typeNames: Record<string, string> = {
-        'face': '얼굴',
-        'hat': '모자',
-        'glasses': '안경/선글라스',
-        'top': '상의',
-        'inner': '내의',
-        'bottom': '하의/바지',
-        'shoes': '신발'
-    };
+    const baseB64 = await urlToBase64(params.baseImage);
 
-    const typeName = typeNames[itemType] || itemType;
+    const prompt = `// --- TASK: COLOR_CHANGE (SECURE) ---
+// Change the color of the ${params.itemType} to ${params.colorName} (${params.targetColor}).
 
-    const regionInfo = targetRegion
-        ? `Target region: x=${(targetRegion.bbox.x * 100).toFixed(1)}%, y=${(targetRegion.bbox.y * 100).toFixed(1)}%, width=${(targetRegion.bbox.width * 100).toFixed(1)}%, height=${(targetRegion.bbox.height * 100).toFixed(1)}%`
-        : '';
+**[CRITICAL RULES]**
+1. Keep model's face, body, and pose IDENTICAL
+2. Change ONLY the ${params.itemType} color
+3. Maintain fabric texture and details
+4. Keep realistic lighting and shadows
+5. Keep background unchanged
 
-    const prompt = `[TASK: PRECISE CLOTHING COLOR CHANGE]
+Output a high-quality fashion photo with the color change applied.`;
 
-You are given an image of a fashion model.
+    const result = await callGeminiSecure(
+        prompt,
+        [{ data: baseB64, mimeType: 'image/png' }]
+    );
 
-[CRITICAL: SIZE LOCK]
-OUTPUT IMAGE DIMENSIONS MUST BE EXACTLY THE SAME AS INPUT.
-DO NOT crop, resize, or change the aspect ratio.
-This is an EDIT to the existing image, not a new generation.
-
-[CRITICAL INSTRUCTION]
-Change ONLY the color of the ${typeName} to ${colorName} (${targetColor}).
-
-${regionInfo}
-
-[STRICT RULES]
-1. **SIZE LOCK**: Output dimensions = Input dimensions EXACTLY
-2. **IDENTITY LOCK**: Model's face must be 100% IDENTICAL
-3. **POSE LOCK**: Pose must be EXACTLY the same
-4. **OTHER ITEMS LOCK**: ALL other clothing items UNCHANGED
-5. **BACKGROUND LOCK**: Background must be PIXEL-IDENTICAL
-6. **TEXTURE LOCK**: Fabric texture, pattern, material UNCHANGED - only color changes
-7. **PRECISE TARGETING**: Change color ONLY within the specified ${typeName} region
-8. **LIGHTING MATCH**: Color must blend naturally with lighting conditions
-9. **NO SIDE EFFECTS**: Do NOT alter ANYTHING except the ${typeName} color
-
-[TARGET COLOR]
-${typeName}: Change to ${colorName} (HEX: ${targetColor})
-
-[OUTPUT]
-Photo-realistic image with ONLY the ${typeName} color changed. Everything else IDENTICAL to input.`;
-
-    try {
-        const ai = getAI();
-        const baseB64 = baseImage.includes('base64,') ? baseImage.split('base64,')[1] : baseImage;
-
-        console.log(`🎨 Changing ${typeName} color to ${colorName}...`);
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-image-preview',
-            contents: {
-                parts: [
-                    { inlineData: { data: baseB64, mimeType: 'image/jpeg' } },
-                    { text: prompt }
-                ]
-            },
-            config: {
-                // @ts-ignore
-                imageConfig: { aspectRatio: '3:4', imageSize: '1K' },
-                safetySettings: SAFETY_SETTINGS
-            }
-        });
-
-        // Extract image from response
-        for (const candidate of response.candidates || []) {
-            for (const part of candidate.content?.parts || []) {
-                if (part.inlineData) {
-                    console.log(`✅ Color changed to ${colorName} successfully`);
-                    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                }
-            }
-        }
-
-        console.warn('⚠️ No image in response, returning original');
-        return baseImage;
-
-    } catch (error) {
-        console.error('Color change failed:', error);
-        return baseImage;
+    if (result.type !== 'image') {
+        throw new Error('Color change failed');
     }
+
+    return result.data;
 }

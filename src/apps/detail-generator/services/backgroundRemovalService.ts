@@ -1,9 +1,9 @@
 /**
- * Background Removal Service using Gemini API
- * Removes background and shadows from product images
+ * 🔐 보안 Background Removal 서비스
+ * 모든 API 호출은 서버리스 함수를 통해 처리됩니다.
  */
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+import { callGeminiSecure } from '../../../lib/geminiClient';
 
 interface BackgroundRemovalResult {
     original: string;
@@ -12,13 +12,10 @@ interface BackgroundRemovalResult {
 }
 
 /**
- * Remove background from a single image using Gemini
+ * 🔐 단일 이미지 배경 제거 - 보안 버전
  */
 export async function removeBackground(imageBase64: string): Promise<string | null> {
-    if (!GEMINI_API_KEY) {
-        console.error('Gemini API key is missing');
-        return null;
-    }
+    console.log('🔐 removeBackground (SECURE)');
 
     const base64Data = imageBase64.includes('base64,')
         ? imageBase64.split('base64,')[1]
@@ -32,49 +29,17 @@ export async function removeBackground(imageBase64: string): Promise<string | nu
     The product should be cleanly isolated without any artifacts.`;
 
     try {
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${GEMINI_API_KEY}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [
-                            { text: prompt },
-                            {
-                                inlineData: {
-                                    mimeType: 'image/png',
-                                    data: base64Data
-                                }
-                            }
-                        ]
-                    }],
-                    generationConfig: {
-                        responseModalities: ['IMAGE', 'TEXT'],
-                        temperature: 0.2
-                    }
-                })
-            }
+        const result = await callGeminiSecure(
+            prompt,
+            [{ data: base64Data, mimeType: 'image/png' }]
         );
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Background removal API error:', errorText);
+        if (result.type !== 'image') {
+            console.error('No image in background removal response');
             return null;
         }
 
-        const data = await response.json();
-
-        // Extract image from response
-        const parts = data.candidates?.[0]?.content?.parts || [];
-        for (const part of parts) {
-            if (part.inlineData?.data) {
-                return `data:image/png;base64,${part.inlineData.data}`;
-            }
-        }
-
-        console.error('No image in background removal response');
-        return null;
+        return result.data;
     } catch (error) {
         console.error('Background removal error:', error);
         return null;
@@ -82,7 +47,7 @@ export async function removeBackground(imageBase64: string): Promise<string | nu
 }
 
 /**
- * Batch remove backgrounds from multiple images
+ * 🔐 배치 배경 제거 - 보안 버전
  */
 export async function batchRemoveBackground(
     images: string[],
