@@ -11,6 +11,7 @@ interface ContentGeneratorPanelProps {
     productImages?: string[];
     onImageGenerated?: (imageUrl: string) => void;
     onAddToPreview?: (imageUrl: string, sectionType: string) => void;
+    lang?: 'ko' | 'en';
 }
 
 export default function ContentGeneratorPanel({
@@ -61,7 +62,18 @@ export default function ContentGeneratorPanel({
         try {
             for (let i = 0; i < sourceImages.length; i++) {
                 setProgressMessage(`처리 중 ${i + 1}/${sourceImages.length}...`);
-                const imageUrl = await synthesizeShoeStudio(sourceImages[i], productImages, false);
+
+                // File -> DataURL 변환
+                const file = sourceImages[i];
+                const reader = new FileReader();
+                const sourceDataUrl = await new Promise<string>((resolve) => {
+                    reader.onload = (e) => resolve(e.target?.result as string);
+                    reader.readAsDataURL(file);
+                });
+
+                // 제품 이미지는 URL이므로 그대로 사용 (첫 번째 제품 이미지 사용)
+                // synthesizeShoeStudio(shoeImageUrl, modelImageUrl, effect)
+                const imageUrl = await synthesizeShoeStudio(productImages[0], sourceDataUrl, 'minimal');
                 results.push(imageUrl);
                 onImageGenerated?.(imageUrl);
                 onAddToPreview?.(imageUrl, 'campaign');
@@ -98,9 +110,9 @@ export default function ContentGeneratorPanel({
         <div className="space-y-3" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' }}>
             {/* Content Image Upload */}
             <div className="bg-[#252525] rounded-lg p-3">
-                <span className="text-[11px] font-medium text-[#999] mb-2 block">콘텐츠 이미지</span>
+                <span className="text-[12px] font-medium text-[#999] mb-2 block">콘텐츠 이미지</span>
                 <div
-                    className={`min-h-[200px] border border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors flex flex-col items-center justify-center ${sourceDragActive ? 'border-[#0d99ff] bg-[#0d99ff]/10' : 'border-[#3c3c3c] hover:border-[#555]'
+                    className={`min-h-[200px] border border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors flex flex-col items-center justify-center ${sourceDragActive ? 'border-[#888] bg-[#888]/10' : 'border-[#3c3c3c] hover:border-[#555]'
                         }`}
                     onClick={() => sourceInputRef.current?.click()}
                     onDragOver={handleDragOver}
@@ -122,22 +134,22 @@ export default function ContentGeneratorPanel({
                         </div>
                     ) : (
                         <>
-                            <div className="text-[#666] text-2xl mb-2">+</div>
+                            <div className="text-[#666] text-xl mb-1">+</div>
                             <p className="text-[11px] font-medium text-[#999]">이미지를 드롭하거나 클릭하여 업로드</p>
-                            <p className="text-[10px] text-[#666] mt-1">신발 이미지 최대 10장</p>
+                            <p className="text-[11px] text-[#666] mt-1">신발 이미지 최대 10장</p>
                         </>
                     )}
                 </div>
                 <div className="flex justify-center gap-0.5 mt-2">
                     {Array.from({ length: 10 }).map((_, i) => (
-                        <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < sourceImages.length ? 'bg-[#0d99ff]' : 'bg-[#3c3c3c]'}`} />
+                        <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < sourceImages.length ? 'bg-[#888]' : 'bg-[#3c3c3c]'}`} />
                     ))}
                 </div>
             </div>
 
             {/* Product Images Status */}
             <div className="bg-[#252525] rounded-lg p-3">
-                <span className="text-[11px] font-medium text-[#999] mb-2 block">제품 이미지</span>
+                <span className="text-[12px] font-medium text-[#999] mb-2 block">제품 이미지</span>
                 {productImages.length > 0 ? (
                     <div className="flex gap-1.5 flex-wrap">
                         {productImages.slice(0, 4).map((url, i) => (
@@ -150,7 +162,7 @@ export default function ContentGeneratorPanel({
                         )}
                     </div>
                 ) : (
-                    <p className="text-[10px] text-[#666]">제품 탭에서 제품 이미지를 먼저 업로드하세요</p>
+                    <p className="text-[11px] text-[#666]">제품 탭에서 제품 이미지를 먼저 업로드하세요</p>
                 )}
             </div>
 
@@ -171,7 +183,7 @@ export default function ContentGeneratorPanel({
                     disabled={isGenerating || sourceImages.length === 0 || productImages.length === 0}
                     className={`py-2.5 rounded text-[11px] font-medium transition-colors ${isGenerating || sourceImages.length === 0 || productImages.length === 0
                         ? 'bg-[#3c3c3c] text-[#666] cursor-not-allowed'
-                        : 'bg-[#0d99ff] text-white hover:bg-[#0b87e0]'
+                        : 'bg-white text-black hover:bg-[#e5e5e5]'
                         }`}
                 >
                     세트 생성
@@ -180,25 +192,25 @@ export default function ContentGeneratorPanel({
 
             {/* Progress */}
             {progressMessage && (
-                <div className="text-[10px] text-center text-[#0d99ff] py-2 bg-[#252525] rounded">{progressMessage}</div>
+                <div className="text-[11px] text-center text-[#888] py-2 bg-[#252525] rounded">{progressMessage}</div>
             )}
 
             {/* Error */}
             {error && (
-                <div className="text-[10px] text-red-400 py-2 bg-red-400/10 rounded px-3">{error}</div>
+                <div className="text-[11px] text-red-400 py-2 bg-red-400/10 rounded px-3">{error}</div>
             )}
 
             {/* Results */}
             {resultImages.length > 0 && (
                 <div className="bg-[#252525] rounded-lg p-3">
-                    <span className="text-[11px] font-medium text-[#999] mb-2 block">결과 ({resultImages.length})</span>
+                    <span className="text-[12px] font-medium text-[#999] mb-2 block">결과 ({resultImages.length})</span>
                     <div className="grid grid-cols-2 gap-1.5 max-h-60 overflow-y-auto">
                         {resultImages.map((url, i) => (
                             <div key={i} className="relative">
                                 <img src={url} alt={`Result ${i + 1}`} className="w-full rounded" />
                                 <button
                                     onClick={() => handleDownload(url, i)}
-                                    className="absolute top-1 right-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded hover:bg-[#0d99ff]"
+                                    className="absolute top-1 right-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded hover:bg-[#888]"
                                 >↓</button>
                             </div>
                         ))}

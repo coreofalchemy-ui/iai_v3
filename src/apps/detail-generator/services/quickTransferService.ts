@@ -451,10 +451,7 @@ export async function executeQuickTransferPipeline(
     onProgress?: (status: string, current: number, total: number) => void,
     onImageGenerated?: ImageGeneratedCallback
 ): Promise<PipelineResult> {
-    console.log('='.repeat(50));
-    console.log('QUICK TRANSFER PIPELINE (SECURE)');
-    console.log('Mode:', options.studio ? 'STUDIO' : 'ORIGINAL');
-    console.log('='.repeat(50));
+
 
     const result: PipelineResult = {
         modelCuts: [],
@@ -566,10 +563,11 @@ export async function executeQuickTransferPipeline(
             await delay(1000);
         }
 
+
+
     } catch (error) {
         console.error('Pipeline error:', error);
     }
 
-    console.log('Pipeline complete (SECURE)');
     return result;
 }

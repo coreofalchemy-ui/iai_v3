@@ -29,10 +29,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // 인증 확인 (Supabase JWT)
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Unauthorized' });
+    // 인증 확인 (Supabase JWT) - 로컬 개발 시 스킵
+    const isLocalDev = req.headers.host?.includes('localhost') || req.headers.host?.includes('127.0.0.1');
+    if (!isLocalDev) {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
     }
 
     // 서버 전용 API 키 (VITE_ 없으므로 브라우저에서 접근 불가)

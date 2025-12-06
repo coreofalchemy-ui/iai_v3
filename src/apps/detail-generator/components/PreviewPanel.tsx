@@ -2,6 +2,9 @@ import React, { forwardRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { HeroSection } from './HeroSection';
 import { TextElement } from './PreviewRenderer';
+import SizeGuideSection from './SizeGuideSection';
+import PrecautionsSection from './PrecautionsSection';
+import ASInfoSection from './ASInfoSection';
 
 interface PreviewPanelProps {
     data: any;
@@ -119,6 +122,33 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
         initialX: number;
         initialY: number;
     }>({ sectionId: null, startX: 0, startY: 0, initialX: 0, initialY: 0 });
+
+    // 그리드 셀 이미지 변환 상태 (확대/축소 및 위치)
+    const [gridCellTransforms, setGridCellTransforms] = React.useState<{
+        [cellKey: string]: { scale: number; x: number; y: number };
+    }>({});
+
+    // 그리드 셀 이미지 패닝 상태
+    const [gridCellPanningState, setGridCellPanningState] = React.useState<{
+        cellKey: string | null;
+        startX: number;
+        startY: number;
+        initialX: number;
+        initialY: number;
+    }>({ cellKey: null, startX: 0, startY: 0, initialX: 0, initialY: 0 });
+
+    // 그리드 셀 컬럼 너비 상태 (fr 비율)
+    const [gridColumnWidths, setGridColumnWidths] = React.useState<{
+        [sectionKey: string]: number[];
+    }>({});
+
+    // 그리드 셀 컬럼 리사이즈 드래그 상태
+    const [gridColumnResizeState, setGridColumnResizeState] = React.useState<{
+        sectionKey: string | null;
+        columnIndex: number;
+        startX: number;
+        initialWidths: number[];
+    }>({ sectionKey: null, columnIndex: 0, startX: 0, initialWidths: [] });
 
     const [contextMenuState, setContextMenuState] = React.useState<{
         visible: boolean;
@@ -351,6 +381,120 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
         };
     }, [draggingState, resizingState, panningState, onUpdateTextElement, onUpdateSectionHeight, onUpdateImageTransform, imageTransforms]);
 
+    // 그리드 셀 이미지 패닝 핸들러
+    React.useEffect(() => {
+        if (!gridCellPanningState.cellKey) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const deltaX = e.clientX - gridCellPanningState.startX;
+            const deltaY = e.clientY - gridCellPanningState.startY;
+
+            setGridCellTransforms(prev => ({
+                ...prev,
+                [gridCellPanningState.cellKey!]: {
+                    ...(prev[gridCellPanningState.cellKey!] || { scale: 1, x: 0, y: 0 }),
+                    x: gridCellPanningState.initialX + deltaX,
+                    y: gridCellPanningState.initialY + deltaY
+                }
+            }));
+        };
+
+        const handleMouseUp = () => {
+            setGridCellPanningState({ cellKey: null, startX: 0, startY: 0, initialX: 0, initialY: 0 });
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [gridCellPanningState]);
+
+    // 그리드 셀 이미지 휠 줌 핸들러
+    const handleGridCellWheel = (e: React.WheelEvent, cellKey: string) => {
+        e.stopPropagation();
+        const currentTransform = gridCellTransforms[cellKey] || { scale: 1, x: 0, y: 0 };
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        const newScale = Math.max(0.5, Math.min(3.0, currentTransform.scale + delta));
+
+        setGridCellTransforms(prev => ({
+            ...prev,
+            [cellKey]: { ...currentTransform, scale: newScale }
+        }));
+    };
+
+    // 그리드 셀 이미지 드래그 시작 핸들러
+    const handleGridCellMouseDown = (e: React.MouseEvent, cellKey: string) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const currentTransform = gridCellTransforms[cellKey] || { scale: 1, x: 0, y: 0 };
+
+        setGridCellPanningState({
+            cellKey,
+            startX: e.clientX,
+            startY: e.clientY,
+            initialX: currentTransform.x,
+            initialY: currentTransform.y
+        });
+    };
+
+    // 그리드 컬럼 리사이즈 시작 핸들러
+    const handleGridColumnResizeStart = (e: React.MouseEvent, sectionKey: string, columnIndex: number, cols: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // 기존 너비 가져오거나 기본값 생성
+        const currentWidths = gridColumnWidths[sectionKey] || Array(cols).fill(1);
+
+        setGridColumnResizeState({
+            sectionKey,
+            columnIndex,
+            startX: e.clientX,
+            initialWidths: [...currentWidths]
+        });
+    };
+
+    // 그리드 컬럼 리사이즈 useEffect
+    React.useEffect(() => {
+        if (!gridColumnResizeState.sectionKey) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const deltaX = e.clientX - gridColumnResizeState.startX;
+            const pixelPerFr = 100; // 1fr당 픽셀 수 (대략적)
+            const deltaFr = deltaX / pixelPerFr;
+
+            const newWidths = [...gridColumnResizeState.initialWidths];
+            const colIndex = gridColumnResizeState.columnIndex;
+
+            // 왼쪽 컬럼 확대, 오른쪽 컬럼 축소 (최소 0.2fr)
+            newWidths[colIndex] = Math.max(0.2, gridColumnResizeState.initialWidths[colIndex] + deltaFr);
+            if (colIndex + 1 < newWidths.length) {
+                newWidths[colIndex + 1] = Math.max(0.2, gridColumnResizeState.initialWidths[colIndex + 1] - deltaFr);
+            }
+
+            setGridColumnWidths(prev => ({
+                ...prev,
+                [gridColumnResizeState.sectionKey!]: newWidths
+            }));
+        };
+
+        const handleMouseUp = () => {
+            setGridColumnResizeState({ sectionKey: null, columnIndex: 0, startX: 0, initialWidths: [] });
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [gridColumnResizeState]);
+
     // Helper to load image and set height
     const loadImageAndSetHeight = (file: File, sectionKey: string) => {
         const reader = new FileReader();
@@ -453,7 +597,7 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                             zIndex: 1000,
                             whiteSpace: 'pre-wrap',
                             userSelect: 'none',
-                            border: isDragging ? '1px dashed blue' : '1px solid transparent',
+                            border: isDragging ? '1px dashed black' : '1px solid transparent',
                             padding: '4px'
                         }}
                         onMouseDown={(e) => handleTextMouseDown(e, text)}
@@ -520,7 +664,7 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                             {selectedLineId === line.id && (
                                 <path
                                     d={pathD}
-                                    stroke="#3b82f6"
+                                    stroke="black"
                                     strokeWidth={line.strokeWidth + 6}
                                     fill="none"
                                     strokeDasharray="5,5"
@@ -564,7 +708,7 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                             {/* 시작점 핸들 - 선택된 경우에만 표시 */}
                             <circle
                                 cx={x1} cy={y1} r={selectedLineId === line.id ? 10 : 8}
-                                fill={selectedLineId === line.id ? '#3b82f6' : line.strokeColor}
+                                fill={selectedLineId === line.id ? 'black' : line.strokeColor}
                                 opacity={selectedLineId === line.id ? 1 : 0.7}
                                 style={{ cursor: 'move', pointerEvents: 'auto' }}
                                 onMouseDown={(e) => {
@@ -586,7 +730,7 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                             {/* 끝점 핸들 - 선택된 경우에만 표시 */}
                             <circle
                                 cx={x2} cy={y2} r={selectedLineId === line.id ? 10 : 8}
-                                fill={selectedLineId === line.id ? '#3b82f6' : line.strokeColor}
+                                fill={selectedLineId === line.id ? 'black' : line.strokeColor}
                                 opacity={selectedLineId === line.id ? 1 : 0.7}
                                 style={{ cursor: 'move', pointerEvents: 'auto' }}
                                 onMouseDown={(e) => {
@@ -612,21 +756,112 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
         );
     };
 
+    // Get transition settings from data
+    const enableTransitions = data.enableTransitions !== false;
+    const transitionType = data.transitionType || 'fade';
+    const transitionDuration = data.transitionDuration || 0.5;
+
+    // Transition CSS classes and styles
+    const getTransitionStyle = () => {
+        if (!enableTransitions) return {};
+        switch (transitionType) {
+            case 'slide':
+                return { animation: `slideIn ${transitionDuration}s ease-out` };
+            case 'zoom':
+                return { animation: `zoomIn ${transitionDuration}s ease-out` };
+            case 'fade':
+            default:
+                return { animation: `fadeIn ${transitionDuration}s ease-out` };
+        }
+    };
+
     return (
         <div
             ref={ref}
             className="preview-panel bg-white shadow-lg pb-8 relative"
             style={{ width: '100%', maxWidth: '1000px', margin: '0 auto' }}
         >
+            {/* Transition Animation Styles */}
+            <style>{`
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                @keyframes slideIn {
+                    from { opacity: 0; transform: translateY(30px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes zoomIn {
+                    from { opacity: 0; transform: scale(0.95); }
+                    to { opacity: 1; transform: scale(1); }
+                }
+                .section-transition {
+                    animation-fill-mode: both;
+                }
+            `}</style>
+
             {/* Custom Context Menu - Rendered via Portal - REMOVED to use parent's menu */}
             {null}
 
             {sectionOrder.map((sectionKey) => {
+                // Content Section: Size Guide
+                if (sectionKey === 'size-guide') {
+                    return (
+                        <div
+                            key={sectionKey}
+                            data-section={sectionKey}
+                            className="section-transition"
+                            style={getTransitionStyle()}
+                        >
+                            <SizeGuideSection
+                                visible={data.detailTextContent?.sizeGuide?.visible !== false}
+                                productImage={data.productFiles?.[0] ? URL.createObjectURL(data.productFiles[0]) : (Object.values(data.imageUrls || {}).find((url: any) => typeof url === 'string' && url.startsWith('data:')) as string)}
+                                sizeData={{
+                                    productSpec: data.heroTextContent?.productSpec,
+                                    heightSpec: data.heroTextContent?.heightSpec,
+                                    customContent: data.heroTextContent?.sizeGuide,
+                                    specs: data.detailTextContent?.sizeGuide?.specs,
+                                    disclaimer: data.detailTextContent?.sizeGuide?.disclaimer
+                                }}
+                            />
+                        </div>
+                    );
+                }
+
+                // Content Section: A/S Info
+                if (sectionKey === 'as-info') {
+                    return (
+                        <div
+                            key={sectionKey}
+                            data-section={sectionKey}
+                            className="section-transition"
+                            style={getTransitionStyle()}
+                        >
+                            <ASInfoSection visible={true} asData={data.detailTextContent?.asInfo} customContent={data.heroTextContent?.asInfo} />
+                        </div>
+                    );
+                }
+
+                // Content Section: Precautions
+                if (sectionKey === 'precautions') {
+                    return (
+                        <div
+                            key={sectionKey}
+                            data-section={sectionKey}
+                            className="section-transition"
+                            style={getTransitionStyle()}
+                        >
+                            <PrecautionsSection visible={true} precautionsData={data.detailTextContent?.precautions} content={data.heroTextContent?.precautions} />
+                        </div>
+                    );
+                }
+
                 if (sectionKey === 'hero') {
                     return (
                         <div
                             key={sectionKey}
-                            className="relative"
+                            className={`relative section-transition`}
+                            style={getTransitionStyle()}
                             onClick={(e) => { e.stopPropagation(); }}
                             ref={el => { sectionRefs.current[sectionKey] = el; }}
                             data-section={sectionKey}
@@ -644,84 +879,129 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                     const grid = gridSections[sectionKey];
                     const gridHeight = sectionHeights[sectionKey] || grid.height;
 
+                    // 컬럼 너비 가져오거나 기본값 생성
+                    const columnWidths = gridColumnWidths[sectionKey] || Array(grid.cols).fill(1);
+                    const templateColumns = columnWidths.map(w => `${w}fr`).join(' ');
+
                     return (
                         <div
                             key={sectionKey}
                             data-section={sectionKey}
                             ref={el => { sectionRefs.current[sectionKey] = el; }}
-                            className="relative group"
-                            style={{ height: `${gridHeight}px` }}
+                            className={`relative group section-transition`}
+                            style={{ height: `${gridHeight}px`, ...getTransitionStyle() }}
                             onContextMenu={(e) => handleContextMenu(e, sectionKey)}
                         >
                             {/* Grid Layout */}
                             <div
-                                className="w-full h-full grid gap-1 p-1 bg-gray-100"
+                                className="w-full h-full grid gap-0 p-1 bg-gray-100 relative"
                                 style={{
-                                    gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
+                                    gridTemplateColumns: templateColumns,
                                     gridTemplateRows: `repeat(${grid.rows}, 1fr)`
                                 }}
                             >
-                                {grid.cells.map((cellImage, cellIdx) => (
-                                    <div
-                                        key={`${sectionKey}-cell-${cellIdx}`}
-                                        className={`relative overflow-hidden bg-gray-200 border-2 border-dashed border-gray-300 
-                                            flex items-center justify-center cursor-pointer 
-                                            hover:border-blue-400 hover:bg-blue-50 transition-colors`}
-                                        onDragOver={handleDragOver}
-                                        onDrop={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                                                const file = e.dataTransfer.files[0];
-                                                const reader = new FileReader();
-                                                reader.onload = (ev) => {
-                                                    const imageUrl = ev.target?.result as string;
-                                                    if (onUpdateGridCell) {
-                                                        onUpdateGridCell(sectionKey, cellIdx, imageUrl);
+                                {grid.cells.map((cellImage, cellIdx) => {
+                                    const colIdx = cellIdx % grid.cols;
+                                    const isLastCol = colIdx === grid.cols - 1;
+
+                                    return (
+                                        <div key={`${sectionKey}-cell-${cellIdx}`} className="relative">
+                                            <div
+                                                className={`absolute inset-0 overflow-hidden bg-gray-200 border border-gray-300 
+                                                    flex items-center justify-center cursor-pointer 
+                                                    hover:border-gray-400 hover:bg-gray-50 transition-colors`}
+                                                style={{ margin: '2px' }}
+                                                onDragOver={handleDragOver}
+                                                onDrop={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                                        const file = e.dataTransfer.files[0];
+                                                        const reader = new FileReader();
+                                                        reader.onload = (ev) => {
+                                                            const imageUrl = ev.target?.result as string;
+                                                            if (onUpdateGridCell) {
+                                                                onUpdateGridCell(sectionKey, cellIdx, imageUrl);
+                                                            }
+                                                        };
+                                                        reader.readAsDataURL(file);
                                                     }
-                                                };
-                                                reader.readAsDataURL(file);
-                                            }
-                                        }}
-                                        onClick={() => {
-                                            const input = document.createElement('input');
-                                            input.type = 'file';
-                                            input.accept = 'image/*';
-                                            input.onchange = (ev: any) => {
-                                                if (ev.target.files && ev.target.files.length > 0) {
-                                                    const file = ev.target.files[0];
-                                                    const reader = new FileReader();
-                                                    reader.onload = (evr) => {
-                                                        const imageUrl = evr.target?.result as string;
-                                                        if (onUpdateGridCell) {
-                                                            onUpdateGridCell(sectionKey, cellIdx, imageUrl);
+                                                }}
+                                                onClick={() => {
+                                                    if (cellImage) return; // 이미지가 있으면 클릭 업로드 비활성화
+                                                    const input = document.createElement('input');
+                                                    input.type = 'file';
+                                                    input.accept = 'image/*';
+                                                    input.onchange = (ev: any) => {
+                                                        if (ev.target.files && ev.target.files.length > 0) {
+                                                            const file = ev.target.files[0];
+                                                            const reader = new FileReader();
+                                                            reader.onload = (evr) => {
+                                                                const imageUrl = evr.target?.result as string;
+                                                                if (onUpdateGridCell) {
+                                                                    onUpdateGridCell(sectionKey, cellIdx, imageUrl);
+                                                                }
+                                                            };
+                                                            reader.readAsDataURL(file);
                                                         }
                                                     };
-                                                    reader.readAsDataURL(file);
-                                                }
-                                            };
-                                            input.click();
-                                        }}
-                                    >
-                                        {cellImage ? (
-                                            <img
-                                                src={cellImage}
-                                                alt={`Cell ${cellIdx + 1}`}
-                                                className="w-full h-full object-cover"
-                                            />
-                                        ) : (
-                                            <div className="text-gray-400 text-center">
-                                                <div className="text-2xl mb-1">+</div>
-                                                <div className="text-xs">{cellIdx + 1}</div>
+                                                    input.click();
+                                                }}
+                                            >
+                                                {cellImage ? (
+                                                    <div
+                                                        className="w-full h-full overflow-hidden cursor-grab active:cursor-grabbing"
+                                                        onMouseDown={(e) => handleGridCellMouseDown(e, `${sectionKey}-${cellIdx}`)}
+                                                        onWheel={(e) => handleGridCellWheel(e, `${sectionKey}-${cellIdx}`)}
+                                                    >
+                                                        <img
+                                                            src={cellImage}
+                                                            alt={`Cell ${cellIdx + 1}`}
+                                                            className="w-full h-full object-cover select-none pointer-events-none"
+                                                            style={{
+                                                                transform: `scale(${(gridCellTransforms[`${sectionKey}-${cellIdx}`]?.scale || 1)}) translate(${(gridCellTransforms[`${sectionKey}-${cellIdx}`]?.x || 0)}px, ${(gridCellTransforms[`${sectionKey}-${cellIdx}`]?.y || 0)}px)`,
+                                                                transformOrigin: 'center center'
+                                                            }}
+                                                            draggable={false}
+                                                        />
+                                                        {/* 리셋 버튼 */}
+                                                        <button
+                                                            className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full text-[10px] flex items-center justify-center hover:bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setGridCellTransforms(prev => ({
+                                                                    ...prev,
+                                                                    [`${sectionKey}-${cellIdx}`]: { scale: 1, x: 0, y: 0 }
+                                                                }));
+                                                            }}
+                                                            title="리셋"
+                                                        >
+                                                            ↺
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-gray-400 text-center">
+                                                        <div className="text-2xl mb-1">+</div>
+                                                        <div className="text-xs">{cellIdx + 1}</div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
-                                    </div>
-                                ))}
+                                            {/* 컬럼 리사이즈 핸들 (마지막 컬럼 제외) */}
+                                            {!isLastCol && (
+                                                <div
+                                                    className="absolute top-0 right-0 w-2 h-full cursor-ew-resize z-10 hover:bg-gray-500/50 transition-colors"
+                                                    style={{ transform: 'translateX(50%)' }}
+                                                    onMouseDown={(e) => handleGridColumnResizeStart(e, sectionKey, colIdx, grid.cols)}
+                                                />
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
 
                             {/* Resize Handle */}
                             <div
-                                className="absolute bottom-0 left-0 right-0 h-3 bg-gradient-to-t from-gray-300 to-transparent cursor-ns-resize hover:from-blue-400"
+                                className="absolute bottom-0 left-0 right-0 h-3 bg-gradient-to-t from-gray-300 to-transparent cursor-ns-resize hover:from-gray-400"
                                 onMouseDown={(e) => handleResizeMouseDown(e, sectionKey, gridHeight)}
                             />
 
@@ -754,10 +1034,11 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                         key={sectionKey}
                         data-section={sectionKey}
                         ref={el => { sectionRefs.current[sectionKey] = el; }}
-                        className={`relative group overflow-hidden ${isHeld ? 'border-4 border-red-500' : ''}`}
+                        className={`relative group overflow-hidden section-transition ${isHeld ? 'border-4 border-red-500' : ''}`}
                         style={{
                             minHeight: isPlaceholder ? '200px' : 'auto',
-                            boxSizing: 'border-box'
+                            boxSizing: 'border-box',
+                            ...getTransitionStyle()
                         }}
                         onDragOver={handleDragOver}
                         onDrop={(e) => handleDrop(e, sectionKey)}
@@ -765,12 +1046,12 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                         onContextMenu={(e) => handleContextMenu(e, sectionKey)}
                     >
                         {isPlaceholder ? (
-                            <div className="w-full h-full border-4 border-dashed border-gray-200 flex flex-col items-center justify-center bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer box-border min-h-[200px]">
+                            <div className="w-full h-full border-4 border-dashed border-gray-200 flex flex-col items-center justify-center bg-gray-50 hover:border-gray-300 transition-colors cursor-pointer box-border min-h-[200px]">
                                 {isLoading ? (
                                     // 로딩 스피너 표시
                                     <div className="flex flex-col items-center justify-center">
-                                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
-                                        <div className="text-blue-500 font-bold text-lg">이미지 생성 중...</div>
+                                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-500 border-t-transparent mb-4"></div>
+                                        <div className="text-gray-500 font-bold text-lg">이미지 생성 중...</div>
                                         <div className="text-gray-400 text-sm mt-2">잠시만 기다려주세요</div>
                                     </div>
                                 ) : sectionKey.startsWith('spacer-') ? (
@@ -835,7 +1116,7 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                         {/* Resize Handle - Only when editable (minimap ON or section selected) */}
                         {!isPlaceholder && isEditable && (
                             <div
-                                className="absolute bottom-0 left-0 w-full h-5 cursor-ns-resize z-50 flex items-center justify-center bg-gradient-to-t from-blue-500/30 to-transparent hover:from-blue-500/50 transition-all"
+                                className="absolute bottom-0 left-0 w-full h-5 cursor-ns-resize z-50 flex items-center justify-center bg-gradient-to-t from-gray-500/30 to-transparent hover:from-gray-500/50 transition-all"
                                 onMouseDown={(e) => {
                                     const currentH = explicitHeight || e.currentTarget.parentElement?.clientHeight || 100;
                                     handleResizeMouseDown(e, sectionKey, currentH);

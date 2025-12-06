@@ -434,6 +434,106 @@ export default function DetailGeneratorApp() {
         }
     }, [screen]);
 
+    // Auto-capture sections for minimap
+    useEffect(() => {
+        if (screen !== 'result') return;
+
+        const captureTimer = setTimeout(() => {
+            const sectionsToCapture = ['hero', ...sectionOrder.filter(id => {
+                if (id === 'hero') return true;
+                const isAISection =
+                    (generatedData.detailTextContent?.sizeGuide && id.includes('sizeGuide')) ||
+                    (generatedData.detailTextContent?.precautions && id.includes('precautions')) ||
+                    (generatedData.detailTextContent?.asInfo && id.includes('asInfo')) ||
+                    (generatedData.noticeContent && id.includes('notice'));
+                if (id.startsWith('grid-')) return true;
+                if (id.startsWith('product-') || id.startsWith('shoe-') || id.startsWith('custom-')) return true;
+                return isAISection;
+            })];
+
+            sectionsToCapture.forEach(async (sectionId) => {
+                // We only want to auto-capture if we don't have a valid image URL yet, 
+                // OR if it's a HTML section that might have updated
+
+                try {
+                    console.log(`Using html2canvas for: ${sectionId}`);
+                    const imageUrl = await captureSectionAsImage(sectionId);
+                    if (imageUrl) {
+                        setGeneratedData((prev: any) => ({
+                            ...prev,
+                            imageUrls: {
+                                ...prev.imageUrls,
+                                [sectionId]: imageUrl
+                            }
+                        }));
+
+                        // Also update height
+                        const sectionEl = document.querySelector(`[data-section="${sectionId}"]`) as HTMLElement;
+                        if (sectionEl) {
+                            setSectionHeights((prev: any) => ({
+                                ...prev,
+                                [sectionId]: sectionEl.offsetHeight
+                            }));
+                        }
+                    }
+                } catch (e) {
+                    console.log(`Auto-capture missed for ${sectionId} (might not be rendered yet)`);
+                }
+            });
+
+
+
+        }, 2000); // 2 second delay to ensure rendering
+
+        return () => clearTimeout(captureTimer);
+    }, [
+        screen,
+        sectionOrder,
+        generatedData.heroTextContent,
+        generatedData.textContent,
+        generatedData.specContent,
+        generatedData.noticeContent,
+        generatedData.detailTextContent?.sizeGuide,
+        generatedData.detailTextContent?.precautions,
+        generatedData.detailTextContent?.asInfo,
+        gridSections // Include gridSections to trigger re-capture when grids change
+    ]);
+
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Delete key
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                // Ignore if typing in input
+                if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+                if (contextMenu.targetId) {
+                    // Delete section
+                    if (confirm('선택한 섹션을 삭제하시겠습니까?')) {
+                        setSectionOrder(prev => prev.filter(id => id !== contextMenu.targetId));
+                        setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
+                    }
+                } else if (selectedSections.size > 0) {
+                    if (confirm(`${selectedSections.size}개의 선택된 섹션을 삭제하시겠습니까?`)) {
+                        setSectionOrder(prev => prev.filter(id => !selectedSections.has(id)));
+                        setSelectedSections(new Set());
+                    }
+                }
+            }
+
+            // Undo (Ctrl+Z)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                // Implement global undo if needed, currently mainly for section images
+                if (contextMenu.targetId) {
+                    handleUndoSection();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [contextMenu.targetId, selectedSections]);
+
     const handleDeviceChange = (device: 'mobile' | 'tablet' | 'desktop' | 'responsive') => {
         setPreviewDevice(device);
         switch (device) {
@@ -1217,17 +1317,34 @@ export default function DetailGeneratorApp() {
 
     // Capture section as image using html2canvas
     const captureSectionAsImage = async (sectionId: string): Promise<string> => {
+        console.log(`📸 captureSectionAsImage called for: ${sectionId}`);
         const sectionEl = document.querySelector(`[data-section="${sectionId}"]`) as HTMLElement;
-        if (!sectionEl) throw new Error('Section not found');
+        if (!sectionEl) {
+            console.error(`❌ Section element not found for: ${sectionId}`);
+            // Attempt to list all data-section attributes available for debugging
+            const allSections = document.querySelectorAll('[data-section]');
+            console.log('Available sections:', Array.from(allSections).map(el => el.getAttribute('data-section')));
+            throw new Error(`Section not found: ${sectionId}`);
+        }
 
-        const canvas = await html2canvas(sectionEl, {
-            useCORS: true,
-            scale: 2, // High quality capture
-            backgroundColor: null,
-            logging: false
-        });
+        console.log(`✅ Element found for ${sectionId}, dimensions: ${sectionEl.offsetWidth}x${sectionEl.offsetHeight}`);
 
-        return canvas.toDataURL('image/jpeg', 0.95);
+        try {
+            const canvas = await html2canvas(sectionEl, {
+                useCORS: true,
+                scale: 0.5, // Reduced scale for performance
+                backgroundColor: '#ffffff', // Ensure white background
+                logging: true,
+                onclone: (clonedDoc) => {
+                    console.log(`Clone created for ${sectionId}`, clonedDoc.body);
+                }
+            });
+            console.log(`✅ html2canvas success for ${sectionId}`);
+            return canvas.toDataURL('image/jpeg', 0.8);
+        } catch (error) {
+            console.error(`❌ html2canvas failed for ${sectionId}:`, error);
+            throw error;
+        }
     };
 
     const handlePoseDialogConfirm = async (count: number) => {
@@ -1685,6 +1802,7 @@ export default function DetailGeneratorApp() {
                                     onAction={handleAction}
                                     isHoldOn={isHoldOn}
                                     onToggleHoldMode={handleToggleGlobalHold}
+                                    sectionHeights={sectionHeights}
                                 />
                             </div>
                         )}

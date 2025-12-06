@@ -14,6 +14,7 @@ interface NavigationMinimapProps {
     onAction?: (action: string, type: any, index: any, arg?: any) => void;
     isHoldOn?: boolean;
     onToggleHoldMode?: () => void;
+    sectionHeights?: { [key: string]: number };
 }
 
 export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
@@ -27,36 +28,39 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
     previewHtml,
     onAction,
     isHoldOn = true,
-    onToggleHoldMode
+    onToggleHoldMode,
+    sectionHeights
 }) => {
     const minimapRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
     const [minimapScale, setMinimapScale] = useState(1); // 미니맵 전체 스케일
 
     const getPreviewImage = (section: string) => {
-        if (section === 'hero') return null;
-
-        let url = null;
-        const sectionUrl = data?.imageUrls?.[section];
-
-        // 직접 섹션 ID로 접근 (동적 섹션: custom-*, shoe-*, model-cut-*, beautified-*, closeup-* 등)
-        if (typeof sectionUrl === 'string' && sectionUrl !== 'loading' && sectionUrl !== 'SPACER') {
-            url = sectionUrl;
-        } else if (Array.isArray(sectionUrl) && sectionUrl.length > 0) {
-            url = typeof sectionUrl[0] === 'string' ? sectionUrl[0] : sectionUrl[0]?.url;
-        } else if (section === 'products' && data?.imageUrls?.products?.[0]) {
-            url = typeof data.imageUrls.products[0] === 'string' ? data.imageUrls.products[0] : data.imageUrls.products[0]?.url;
-        } else if (section === 'models' && data?.imageUrls?.modelShots?.[0]?.url) {
-            url = data.imageUrls.modelShots[0].url;
-        } else if (section === 'closeups' && data?.imageUrls?.closeupShots?.[0]?.url) {
-            url = data.imageUrls.closeupShots[0].url;
+        // 1. 단순 문자열 URL 확인 (커스텀, Hero 등)
+        const directUrl = data?.imageUrls?.[section];
+        if (typeof directUrl === 'string' && directUrl !== 'loading' && directUrl !== 'SPACER') {
+            // placeholder 필터링 제거 (실제 이미지가 있다면 보여줌)
+            return directUrl;
         }
 
-        // Filter out placeholder URLs to show empty state instead
-        if (url && url.includes('via.placeholder.com')) {
-            return null;
+        // 2. 객체/배열 형태 URL 확인
+        if (typeof directUrl === 'object' && directUrl !== null) {
+            if (directUrl.url) return directUrl.url; // 단일 객체
+            if (Array.isArray(directUrl) && directUrl.length > 0) {
+                // 배열의 첫번째 항목
+                const firstItem = directUrl[0];
+                if (typeof firstItem === 'string') return firstItem;
+                if (firstItem?.url) return firstItem.url;
+            }
         }
-        return url;
+
+        // 3. 레거시/특정 섹션 타입 매핑 (필요한 경우 유지, 하지만 위 로직으로 대부분 커버됨)
+        if (section === 'products' && data?.imageUrls?.products?.[0]) {
+            const p = data.imageUrls.products[0];
+            return typeof p === 'string' ? p : p?.url;
+        }
+
+        return null;
     };
 
     const getSectionLabel = (section: string) => {
@@ -64,6 +68,9 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
         if (section === 'products') return '제품';
         if (section === 'models') return '모델';
         if (section === 'closeups') return '디테일';
+        if (section.startsWith('size-guide')) return '사이즈';
+        if (section.startsWith('precautions')) return '주의사항';
+        if (section.startsWith('as-info')) return 'A/S';
         return '섹션';
     };
 
@@ -105,59 +112,6 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
         setImgErrors(prev => ({ ...prev, [section]: true }));
     };
 
-    // 휠로 미니맵 전체 스케일 조절
-    const handleMinimapWheel = (e: React.WheelEvent) => {
-        e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        setMinimapScale(prev => Math.max(0.3, Math.min(1.5, prev + delta)));
-    };
-
-    // 히어로 섹션 텍스트 컨텐츠 렌더링
-    const renderHeroContent = () => {
-        const heroData = data?.heroTextContent;
-        if (!heroData) {
-            return (
-                <div className="flex flex-col p-2 text-[6px]">
-                    <div className="w-full h-1 bg-gray-300 rounded-sm mb-0.5" />
-                    <div className="w-2/3 h-0.5 bg-gray-200 rounded-sm mb-1" />
-                    <div className="flex-grow bg-white border border-gray-100 rounded-sm" />
-                </div>
-            );
-        }
-
-        return (
-            <div className="w-full h-full p-1 flex flex-col text-[4px] leading-tight overflow-hidden bg-white">
-                <div className="text-[3px] text-gray-400 uppercase tracking-widest mb-0.5 truncate">
-                    {heroData.brandLine || 'BRAND'}
-                </div>
-                <div className="text-[5px] font-bold text-gray-800 truncate mb-0.5">
-                    {heroData.productName || 'Product'}
-                </div>
-                <div className="text-[3px] text-gray-500 truncate mb-1">
-                    {heroData.subName || 'Model'}
-                </div>
-                <div className="flex-1 flex flex-col gap-0.5 overflow-hidden">
-                    {heroData.stylingMatch && (
-                        <div className="text-[2.5px] text-gray-400 line-clamp-2">{heroData.stylingMatch}</div>
-                    )}
-                    {heroData.craftsmanship && (
-                        <div className="text-[2.5px] text-gray-400 line-clamp-2">{heroData.craftsmanship}</div>
-                    )}
-                </div>
-                <div className="mt-auto pt-0.5 border-t border-gray-100">
-                    <div className="text-[3px] font-bold text-purple-600">SPEC</div>
-                    <div className="flex gap-1 text-[2.5px] text-gray-500">
-                        <span>Color</span>
-                        <span>•</span>
-                        <span>Upper</span>
-                        <span>•</span>
-                        <span>Outsole</span>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
     return (
         <div className="h-full flex flex-col bg-gray-50 border-r border-gray-200">
             <div className="p-2 border-b border-gray-200 bg-white flex items-center justify-between">
@@ -167,7 +121,7 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
                         onClick={onToggleHoldMode}
                         className={`
                             w-8 h-4 rounded-full relative transition-colors duration-200 focus:outline-none
-                            ${isHoldOn ? 'bg-blue-500' : 'bg-gray-300'}
+                            ${isHoldOn ? 'bg-gray-500' : 'bg-gray-300'}
                         `}
                         title={isHoldOn ? "Hold ON (Edit Enabled)" : "Hold OFF (Edit Disabled)"}
                     >
@@ -194,13 +148,12 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
                 >+</button>
                 <button
                     onClick={() => setMinimapScale(0.5)}
-                    className="px-1 py-0.5 text-[8px] text-blue-600 hover:bg-blue-50 rounded font-bold"
+                    className="px-1 py-0.5 text-[8px] text-gray-600 hover:bg-gray-50 rounded font-bold"
                 >전체</button>
             </div>
 
             <div
-                className="flex-grow overflow-auto p-2 custom-scrollbar"
-                onWheel={handleMinimapWheel}
+                className="flex-grow overflow-auto p-4 custom-scrollbar bg-[#e5e5e5]"
             >
                 <div
                     style={{
@@ -209,24 +162,25 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
                         transition: 'transform 0.2s ease-out'
                     }}
                 >
-                    <Reorder.Group axis="y" values={sectionOrder} onReorder={onReorder} className="space-y-2">
-                        {sectionOrder.map((section: string) => (
-                            <Reorder.Item key={section} value={section} className="cursor-grab active:cursor-grabbing">
-                                <div
-                                    ref={(el) => { minimapRefs.current[section] = el; }}
-                                    className={`
-                                        relative aspect-[2/3] rounded border transition-all duration-200 overflow-hidden group bg-white
+                    <Reorder.Group axis="y" values={sectionOrder} onReorder={onReorder} className="flex flex-col shadow-lg">
+                        {sectionOrder.map((section: string) => {
+                            // 높이 계산 (기본 1000px 너비 기준)
+                            const currentHeight = sectionHeights?.[section] || (section === 'hero' ? 1500 : 1000);
+                            const aspectRatio = 1000 / currentHeight;
+
+                            return (
+                                <Reorder.Item key={section} value={section} className="cursor-grab active:cursor-grabbing">
+                                    <div
+                                        ref={(el) => { minimapRefs.current[section] = el; }}
+                                        className={`
+                                        relative overflow-hidden group bg-white
                                         ${activeSection === section
-                                            ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md'
-                                            : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'}
+                                                ? 'ring-2 ring-black z-10'
+                                                : 'hover:brightness-95'}
                                     `}
-                                    onClick={() => handleMinimapClick(section)}
-                                >
-                                    {section === 'hero' ? (
-                                        <div className="w-full h-full bg-gradient-to-b from-gray-50 to-white overflow-hidden relative">
-                                            {renderHeroContent()}
-                                        </div>
-                                    ) : (
+                                        style={{ aspectRatio: `${aspectRatio}` }}
+                                        onClick={() => handleMinimapClick(section)}
+                                    >
                                         <div className="w-full h-full bg-white flex items-center justify-center relative">
                                             {getPreviewImage(section) && !imgErrors[section] ? (
                                                 <img
@@ -236,35 +190,35 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
                                                     onError={() => handleImgError(section)}
                                                 />
                                             ) : (
-                                                <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-gray-100 to-gray-50">
-                                                    <span className="text-[10px] text-gray-400 font-medium">{getSectionLabel(section)}</span>
+                                                <div className="flex items-center justify-center w-full h-full bg-gray-50 border border-gray-100">
+                                                    <span className="text-[10px] text-gray-300 font-medium tracking-wider uppercase">{getSectionLabel(section)}</span>
                                                 </div>
                                             )}
-                                            {/* Drop Zone Overlay - Covers the entire item to ensure drop works */}
+                                            {/* Drop Zone Overlay */}
                                             <div
                                                 className="absolute inset-0 z-10"
                                                 onDrop={(e) => handleDrop(e, section)}
                                                 onDragOver={handleDragOver}
                                             />
                                         </div>
-                                    )}
 
-                                    <div className={`
-                                        absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/70 to-transparent text-white text-[9px] font-medium text-center
+                                        <div className={`
+                                        absolute bottom-0 left-0 right-0 p-1 bg-black/50 text-white text-[8px] font-medium text-center
                                         ${activeSection === section ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
-                                        transition-opacity duration-200 pointer-events-none
+                                        transition-opacity duration-200 pointer-events-none backdrop-blur-[2px]
                                     `}>
-                                        {getSectionLabel(section)}
+                                            {getSectionLabel(section)}
+                                        </div>
                                     </div>
-                                </div>
-                            </Reorder.Item>
-                        ))}
+                                </Reorder.Item>
+                            );
+                        })}
                     </Reorder.Group>
 
                     {onAddSection && (
                         <button
                             onClick={onAddSection}
-                            className="w-full mt-2 aspect-square rounded border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all gap-1"
+                            className="w-full mt-2 aspect-square rounded border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-500 hover:bg-gray-50 transition-all gap-1"
                             title="섹션 추가"
                         >
                             <span className="text-2xl font-light">+</span>

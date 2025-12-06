@@ -110,7 +110,7 @@ export const SimpleContextMenu: React.FC<Props> = ({
             )}
             {onWearShoes && (
                 <button
-                    className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-blue-600 font-semibold flex items-center gap-2 border-b border-gray-100"
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-gray-800 font-semibold flex items-center gap-2 border-b border-gray-100"
                     onClick={(e) => {
                         e.stopPropagation();
                         onWearShoes();
@@ -137,8 +137,8 @@ export const SimpleContextMenu: React.FC<Props> = ({
             {onUndo && (
                 <button
                     className={`w-full text-left px-4 py-2.5 font-semibold flex items-center gap-2 border-b border-gray-100 ${canUndo
-                            ? 'hover:bg-yellow-50 text-yellow-600'
-                            : 'opacity-50 cursor-not-allowed text-gray-400'
+                        ? 'hover:bg-yellow-50 text-yellow-600'
+                        : 'opacity-50 cursor-not-allowed text-gray-400'
                         }`}
                     onClick={(e) => {
                         e.stopPropagation();

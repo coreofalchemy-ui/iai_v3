@@ -1,0 +1,112 @@
+
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Delete key
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                // Ignore if typing in input
+                if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+                if (contextMenu.targetId) {
+                    // Delete section
+                    if (confirm('선택한 섹션을 삭제하시겠습니까?')) {
+                        setSectionOrder(prev => prev.filter(id => id !== contextMenu.targetId));
+                        setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
+                    }
+                } else if (selectedSections.size > 0) {
+                    if (confirm(`${selectedSections.size}개의 선택된 섹션을 삭제하시겠습니까?`)) {
+                        setSectionOrder(prev => prev.filter(id => !selectedSections.has(id)));
+                        setSelectedSections(new Set());
+                    }
+                }
+            }
+
+            // Undo (Ctrl+Z)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                // Implement global undo if needed, currently mainly for section images
+                if (contextMenu.targetId) {
+                    handleUndoSection();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [contextMenu.targetId, selectedSections]);
+
+    const handleDeviceChange = (device: 'mobile' | 'tablet' | 'desktop' | 'responsive') => {
+        setPreviewDevice(device);
+        switch (device) {
+            case 'mobile': setPreviewWidth('640'); break;
+            case 'tablet': setPreviewWidth('768'); break;
+            case 'desktop': setPreviewWidth('1000'); break;
+            case 'responsive': setPreviewWidth('100%'); break;
+        }
+    };
+
+    // 새로 만들기 핸들러
+    const handleNewProject = () => {
+        if (!window.confirm('현재 작업을 초기화하고 새 프로젝트를 시작하시겠습니까?')) return;
+        setGeneratedData({
+            textContent: {},
+            specContent: {},
+            heroTextContent: {
+                productName: 'New Product',
+                brandLine: 'BRAND NAME',
+                subName: 'Color / Model',
+                stylingMatch: '',
+                craftsmanship: '',
+                technology: ''
+            },
+            noticeContent: {},
+            imageUrls: { products: [], modelShots: [], closeupShots: [] },
+            layoutHtml: LAYOUT_TEMPLATE_HTML,
+            productFiles: [],
+            modelFiles: [],
+            sectionOrder: ['hero']
+        });
+        setSectionOrder(['hero']);
+        setSectionHeights({});
+        setImageTransforms({});
+        setTextElements([]);
+    };
+
+    // JPG 내보내기 핸들러
+    const handleExportJPG = async () => {
+        if (!previewRef.current) {
+            alert('프리뷰 영역을 찾을 수 없습니다.');
+            return;
+        }
+
+        const targetWidth = previewDevice === 'desktop' ? 1000 : (previewDevice === 'tablet' ? 768 : 640);
+        setLoading(true);
+
+        try {
+            // blob URL을 base64로 변환하는 함수
+            const convertBlobUrlToBase64 = async (blobUrl: string): Promise<string> => {
+                try {
+                    const response = await fetch(blobUrl);
+                    const blob = await response.blob();
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result as string);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                } catch (e) {
+                    console.error('Failed to convert blob URL:', e);
+                    return blobUrl;
+                }
+            };
+
+            // 프리뷰 내 모든 이미지를 base64로 변환
+            const images = previewRef.current.querySelectorAll('img');
+            const originalSrcs: { img: HTMLImageElement; src: string }[] = [];
+
+            for (const img of Array.from(images)) {
+                const src = img.src;
+                if (src.startsWith('blob:')) {
+                    originalSrcs.push({ img, src });
+                    try {
+                        const base64 = await convertBlobUrlToBase64(src);
+                        img.src = base64;

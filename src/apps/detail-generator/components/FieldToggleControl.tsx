@@ -1,4 +1,5 @@
 import React from 'react';
+import { MinimalSlider } from './MinimalSlider';
 
 interface FieldToggleControlProps {
     label: string;
@@ -14,6 +15,7 @@ interface FieldToggleControlProps {
     onDragOver?: (e: React.DragEvent) => void;
     onDrop?: (e: React.DragEvent) => void;
     fieldId?: string;
+    collapsible?: boolean;
 }
 
 export const FieldToggleControl: React.FC<FieldToggleControlProps> = ({
@@ -28,8 +30,15 @@ export const FieldToggleControl: React.FC<FieldToggleControlProps> = ({
     onDragStart,
     onDragOver,
     onDrop,
-    fieldId
+    fieldId,
+    collapsible = false
 }) => {
+    // If collapsible, we use isVisible to control the expanded state directly.
+    // The triangle toggle controls both visibility and expansion.
+    const handleToggle = () => {
+        onToggleVisibility();
+    };
+
     return (
         <div
             className={`rounded-lg p-2.5 transition-all ${isVisible ? 'bg-[#252525]' : 'bg-[#1e1e1e] opacity-50'} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
@@ -52,42 +61,55 @@ export const FieldToggleControl: React.FC<FieldToggleControlProps> = ({
                             <circle cx="8" cy="12" r="1.5" />
                         </svg>
                     )}
-                    <label className={`text-[13px] font-bold ${isVisible ? 'text-white' : 'text-[#666]'}`}>
-                        {label}
-                    </label>
+                    <div
+                        className="flex items-center gap-1.5 cursor-pointer select-none"
+                        onClick={handleToggle}
+                    >
+                        {collapsible && (
+                            <span className={`text-[10px] text-[#888] transition-transform ${isVisible ? 'rotate-90' : ''}`}>▶</span>
+                        )}
+                        <label className={`text-[13px] font-bold cursor-pointer ${isVisible ? 'text-white' : 'text-[#666]'}`}>
+                            {label}
+                        </label>
+                    </div>
                 </div>
                 <div className="flex items-center gap-1">
-                    {/* Font Size Slider */}
-                    {showFontControl && isVisible && onFontSizeChange && (
+                    {/* Font Size Slider - Shows only when visible (expanded) */}
+                    {!collapsible && showFontControl && isVisible && onFontSizeChange && (
                         <div className="flex items-center gap-0.5">
                             <span className="text-[7px] text-[#444]">T</span>
-                            <input
-                                type="range"
-                                min="10"
-                                max="48"
+                            <MinimalSlider
                                 value={fontSize}
-                                onChange={(e) => onFontSizeChange(Number(e.target.value))}
-                                className="w-36 h-[2px] appearance-none bg-[#3c3c3c] rounded cursor-pointer"
-                                style={{ accentColor: '#0d99ff' }}
-                                title={`${fontSize}px`}
+                                min={10}
+                                max={48}
+                                onChange={onFontSizeChange}
+                                className="w-28"
                             />
-                            <span className="text-[7px] text-[#444] w-2.5 text-right">{fontSize}</span>
+                            <span className="text-[9px] text-[#555] w-4 text-right">{fontSize}</span>
                         </div>
                     )}
-                    {/* Toggle Switch */}
-                    <button
-                        onClick={onToggleVisibility}
-                        className={`relative w-5 h-2.5 rounded-full transition-colors ml-1 ${isVisible ? 'bg-[#0d99ff]' : 'bg-[#3c3c3c]'}`}
-                    >
-                        <div
-                            className={`absolute top-[2px] w-1.5 h-1.5 bg-white rounded-full shadow transition-transform ${isVisible ? 'translate-x-2.5' : 'translate-x-0.5'}`}
-                        />
-                    </button>
+                    {/* Toggle Switch REMOVED - Controls are now via Header/Triangle */}
                 </div>
             </div>
-            {/* Content */}
+            {/* Content - Visible only when isVisible is true */}
             {isVisible && (
-                <div className="mt-2">
+                <div className="mt-2 space-y-2">
+                    {/* Collapsible fields have Font Size Control inside */}
+                    {collapsible && showFontControl && onFontSizeChange && (
+                        <div className="flex items-center gap-2 pl-1 mb-1 border-none outline-none ring-0">
+                            <span className="text-[10px] text-[#888]">Font Size</span>
+                            <div className="flex-1 border-none outline-none ring-0">
+                                <MinimalSlider
+                                    value={fontSize}
+                                    min={10}
+                                    max={60}
+                                    onChange={onFontSizeChange}
+                                    className="w-full border-none outline-none"
+                                />
+                            </div>
+                            <span className="text-[10px] text-[#888] w-6 text-right">{fontSize}</span>
+                        </div>
+                    )}
                     {children}
                 </div>
             )}

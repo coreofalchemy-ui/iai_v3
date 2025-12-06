@@ -71,30 +71,47 @@ export const generateFaceBatch = async (
     gender: 'male' | 'female',
     race: string,
     age: string,
-    referenceFaces: string[] = []
+    referenceFaces: string[] = [],
+    count: number = 5
 ): Promise<string[]> => {
-    console.log('🚀 generateFaceBatch (SECURE)', { gender, race, age, refCount: referenceFaces.length });
-
     const genderTerm = gender === 'male' ? 'male' : 'female';
-    const englishRace = raceMapping[race] || "Korean";
-    const vibeKeywords = gender === 'female'
-        ? "Most beautiful K-pop girl group center member, trending Korean beauty standard, cat-eye or puppy-eye visual, flawless but realistic skin"
-        : "Most handsome K-pop boy group center member, sharp jawline, trending Korean male beauty standard, clear skin, intense gaze";
+
+    // 인종별 특화 프롬프트
+    const getVibeByRace = (race: string, gender: 'male' | 'female') => {
+        if (race === '한국인') {
+            return gender === 'female'
+                ? "Absolutely stunning top-tier K-POP idol center visual like BLACKPINK Jennie, IVE Jang Wonyoung, Aespa Karina. Perfect sharp V-line jawline, cat-eyes with natural double eyelids, flawless glass skin, small face ratio"
+                : "Extremely handsome K-POP idol center visual like BTS V, EXO Cha Eunwoo, Stray Kids Hyunjin. Sharp masculine jawline, intense charismatic gaze, perfect proportions";
+        } else if (race === '일본인') {
+            return gender === 'female'
+                ? "Top Japanese actress beauty like Satomi Ishihara, Suzu Hirose. Soft elegant features, natural beauty, refined and gentle facial structure, clear porcelain skin"
+                : "Handsome Japanese actor like Masaki Suda, Takeru Satoh. Clean refined features, natural charisma, masculine but gentle look";
+        } else { // 서양인
+            return gender === 'female'
+                ? "Hollywood A-list actress beauty like Margot Robbie, Gal Gadot. Sharp defined features, striking symmetrical face, elegant bone structure, luminous skin"
+                : "Hollywood leading man like Chris Hemsworth, Timothée Chalamet. Chiseled jawline, striking eyes, perfect facial proportions, refined masculine beauty";
+        }
+    };
+
+    const vibeKeywords = getVibeByRace(race, gender);
     const hairStyles = gender === 'female' ? hairStylesFemale : hairStylesMale;
 
-    const promises = Array(5).fill(null).map(async (_, idx) => {
+    const promises = Array(count).fill(null).map(async (_, idx) => {
         try {
             const hairStyle = hairStyles[idx % hairStyles.length];
             const bg = studioBackgrounds[idx % studioBackgrounds.length];
 
             let prompt = `
-[SUBJECT] Extreme close-up portrait of a ${age}-year-old ${englishRace} ${genderTerm}.
-Style: Top-tier K-pop Idol Visual Center. ${vibeKeywords}
-[SKIN & TEXTURE] Real photography texture (8k resolution). Visible pores, clear skin.
+[SUBJECT] Close-up portrait of a ${age}-year-old ${race} ${genderTerm}.
+[BEAUTY STANDARD] ${vibeKeywords}
+[COMPOSITION] Face MUST be perfectly CENTERED in the frame. Eyes at center of image.
+[QUALITY] Professional studio photography. Sharp focus, perfect lighting. Standard resolution.
 [HAIR] ${hairStyle}
 [BACKGROUND] ${bg}
-[STYLE] High-end Korean idol photoshoot. Full color only.
-[AVOID] Ugly, distorted, messy skin, weird eyes, cartoonish, 3d render.
+[STYLE] High-end beauty editorial, fashion magazine cover worthy.
+[CRITICAL] Extremely beautiful/handsome face only. Sharp facial lines, perfect symmetry.
+[FRAMING] Face fills 70-80% of frame. NO cropping of forehead or chin. Full face visible.
+[AVOID] Off-center, crooked, tilted, cropped faces. Ugly, distorted, asymmetric.
 `;
 
             const images: GeminiImagePart[] = [];
@@ -104,8 +121,8 @@ Style: Top-tier K-pop Idol Visual Center. ${vibeKeywords}
                 prompt += `\n[CRITICAL: IDENTITY PRESERVATION] The output face MUST look exactly like the provided reference.`;
             }
 
-            console.log(`Generating face #${idx + 1}... (SECURE)`);
-            const result = await callGeminiSecure(prompt, images, { aspectRatio: '1:1', imageSize: '1K' });
+            // 해상도 낮춤: 1K -> 표준
+            const result = await callGeminiSecure(prompt, images, { aspectRatio: '1:1' });
 
             if (result.type === 'image') {
                 return result.data;
@@ -119,7 +136,6 @@ Style: Top-tier K-pop Idol Visual Center. ${vibeKeywords}
 
     const results = await Promise.all(promises);
     const validResults = results.filter((img): img is string => img !== null);
-    console.log(`✅ Generated ${validResults.length} faces (SECURE)`);
     return validResults;
 };
 
@@ -215,7 +231,6 @@ export const generateFinalLookbookStream = async (
  * 🔐 얼굴 업스케일 (보안 버전)
  */
 export const upscaleFace = async (base64Image: string): Promise<string> => {
-    console.log('🚀 upscaleFace (SECURE)');
     const base64 = base64Image.includes('base64,') ? base64Image.split('base64,')[1] : base64Image;
     const prompt = `Upscale this face image. High resolution, highly detailed, sharp focus, improve skin texture and lighting. Keep identity exactly the same.`;
 
@@ -223,26 +238,60 @@ export const upscaleFace = async (base64Image: string): Promise<string> => {
     if (result.type !== 'image') throw new Error('Upscale failed');
     return result.data;
 };
-
 /**
- * 🔐 얼굴 교체 (보안 버전)
+ * 🔐 얼굴 교체 (보안 버전) - 원본 하드락 + 얼굴 마스킹 방식
  */
 export const replaceFaceInImage = async (
     targetImageBase64: string,
     sourceFaceBase64: string
 ): Promise<string> => {
-    console.log('🔄 replaceFaceInImage (SECURE)');
     const targetB64 = targetImageBase64.includes('base64,') ? targetImageBase64.split('base64,')[1] : targetImageBase64;
     const faceB64 = sourceFaceBase64.includes('base64,') ? sourceFaceBase64.split('base64,')[1] : sourceFaceBase64;
 
-    const prompt = `[TASK: FACE SWAP] Image 1: Target photo. Image 2: Source face. 
-OUTPUT: Replace face in Image 1 with identity from Image 2. Keep body, pose, clothing, background EXACTLY.
-Seamless blending, high quality.`;
+    const prompt = `[TASK: FACE-ONLY REPLACEMENT WITH TONE MATCHING]
+
+[IMAGE 1] TARGET - The original photo (THIS IS SACRED - DO NOT MODIFY ANYTHING EXCEPT FACE)
+[IMAGE 2] SOURCE - The new face to use
+
+[STEP 1: FACE DETECTION]
+If NO human face in Image 1 → Return Image 1 100% UNCHANGED.
+
+[STEP 2: FACE MASK IDENTIFICATION]
+- Identify the EXACT face region in Image 1 (forehead to chin, ear to ear)
+- This is the ONLY area that will be modified
+- Everything outside this mask = UNTOUCHABLE
+
+[STEP 3: FACE REPLACEMENT - INPAINTING STYLE]
+REPLACE the face region with the identity from Image 2:
+1. Scale the new face to EXACTLY match the original face size
+2. Position at EXACTLY the same location
+3. Match head angle/tilt EXACTLY
+
+[STEP 4: TONE & COLOR MATCHING - CRITICAL]
+- Analyze Image 1's color temperature (warm/cool)
+- Analyze Image 1's lighting direction and intensity
+- Analyze Image 1's skin tone and saturation
+- Apply these EXACT same values to the new face
+- The new face MUST look like it was photographed in the same conditions
+
+[HARD LOCK - VIOLATIONS = FAILURE]
+✗ DO NOT redraw the body
+✗ DO NOT redraw the clothing
+✗ DO NOT redraw the background
+✗ DO NOT change image dimensions
+✗ DO NOT crop or zoom
+✗ DO NOT change the overall image tone
+✓ ONLY replace the face+hair region
+✓ BLEND edges seamlessly
+✓ MATCH original photo's color grading
+
+[OUTPUT]
+Original photo with ONLY the face area replaced. New face should look native to the original photo's lighting and tone.`;
 
     const result = await callGeminiSecure(prompt, [
         { data: targetB64, mimeType: 'image/png' },
         { data: faceB64, mimeType: 'image/png' }
-    ], { aspectRatio: '1:1', imageSize: '1K' });
+    ]);
 
     if (result.type !== 'image') throw new Error('Face replacement failed');
     return result.data;
@@ -256,7 +305,6 @@ export const batchFaceReplacement = async (
     sourceFaceBase64: string,
     onProgress?: (current: number, total: number) => void
 ): Promise<Array<{ original: string; result: string | null; error?: string }>> => {
-    console.log(`🎭 batchFaceReplacement (SECURE): Processing ${targetImageUrls.length} images`);
     const results: Array<{ original: string; result: string | null; error?: string }> = [];
 
     for (let i = 0; i < targetImageUrls.length; i++) {
@@ -270,7 +318,6 @@ export const batchFaceReplacement = async (
             }
             const result = await replaceFaceInImage(targetBase64, sourceFaceBase64);
             results.push({ original: targetUrl, result });
-            console.log(`✅ Face replaced in image ${i + 1}/${targetImageUrls.length}`);
         } catch (e: any) {
             console.error(`❌ Failed to replace face in image ${i + 1}:`, e);
             results.push({ original: targetUrl, result: null, error: e.message });

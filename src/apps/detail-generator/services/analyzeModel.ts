@@ -26,8 +26,6 @@ export interface ModelAnalysis {
  * 🔐 모델 이미지 분석 - 보안 버전
  */
 export async function analyzeModelImage(imageUrl: string): Promise<ModelAnalysis> {
-    console.log('🔐 analyzeModelImage (SECURE) called');
-
     const base64 = await urlToBase64(imageUrl);
 
     const prompt = `Analyze this fashion model image and detect positions of clothing items.
@@ -74,8 +72,6 @@ Respond in JSON format:
  * 🔐 아이템 유형 감지 - 보안 버전
  */
 export async function detectItemType(imageUrl: string): Promise<string> {
-    console.log('🔐 detectItemType (SECURE) called');
-
     const base64 = await urlToBase64(imageUrl);
 
     const prompt = `What type of clothing item is in this image?
@@ -112,7 +108,6 @@ export async function compositeClothingItem(params: {
     itemType: string;
     targetRegion: ClothingRegion;
 }): Promise<string> {
-    console.log(`🔐 compositeClothingItem (SECURE): ${params.itemType}`);
 
     const baseB64 = await urlToBase64(params.baseImage);
     const itemB64 = await urlToBase64(params.itemImage);

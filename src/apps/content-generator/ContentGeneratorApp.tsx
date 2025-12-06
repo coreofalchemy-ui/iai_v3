@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { batchShoeReplacement } from '../detail-generator/services/shoeReplacementService';
+import { batchReplaceShoes } from '../detail-generator/services/shoeReplacementService';
 
 interface DraggableImage {
     id: string;
@@ -88,28 +88,27 @@ export default function ContentGeneratorApp() {
         setProcessProgress({ current: 0, total: images.length });
 
         try {
-            // 첫 번째 신발 이미지를 base64로 변환
-            const shoeBase64 = await new Promise<string>((resolve) => {
+            // 첫 번째 신발 이미지를 Data URL로 변환
+            const shoeDataUrl = await new Promise<string>((resolve) => {
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    const result = e.target?.result as string;
-                    resolve(result.includes('base64,') ? result.split('base64,')[1] : result);
+                    resolve(e.target?.result as string);
                 };
                 reader.readAsDataURL(shoeFiles[0]);
             });
 
-            // 이미지 URL들을 base64로 변환
+            // 이미지 URL들
             const imageUrls = images.map(img => img.url);
-            const results = await batchShoeReplacement(
+            const results = await batchReplaceShoes(
                 imageUrls,
-                shoeBase64,
-                (current, total) => setProcessProgress({ current, total })
+                shoeDataUrl,
+                (current, total, message) => setProcessProgress({ current, total })
             );
 
             // 결과 이미지로 업데이트
             setImages(prev => prev.map((img, idx) => ({
                 ...img,
-                url: (results[idx] as any)?.result || results[idx] || img.url
+                url: results[idx]?.success ? results[idx].url : img.url
             })));
 
             alert('신발 교체 완료!');

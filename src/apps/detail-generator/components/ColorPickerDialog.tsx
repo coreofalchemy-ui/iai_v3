@@ -81,8 +81,8 @@ export const ColorPickerDialog: React.FC<ColorPickerDialogProps> = ({
                         <button
                             key={color.value}
                             className={`w-12 h-12 rounded-xl shadow-md transition-all hover:scale-110 ${selectedColor?.value === color.value
-                                    ? 'ring-4 ring-blue-500 scale-110'
-                                    : 'ring-1 ring-gray-200'
+                                ? 'ring-4 ring-black scale-110'
+                                : 'ring-1 ring-gray-200'
                                 }`}
                             style={{ backgroundColor: color.value }}
                             onClick={() => setSelectedColor(color)}
@@ -117,8 +117,8 @@ export const ColorPickerDialog: React.FC<ColorPickerDialogProps> = ({
                         onClick={handleConfirm}
                         disabled={!selectedColor}
                         className={`flex-1 py-3 rounded-xl font-semibold transition ${selectedColor
-                                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:brightness-110'
-                                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            ? 'bg-black text-white hover:bg-gray-800'
+                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             }`}
                     >
                         색상 적용

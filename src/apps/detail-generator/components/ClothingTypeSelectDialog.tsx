@@ -7,12 +7,12 @@ interface ClothingTypeSelectDialogProps {
 }
 
 const CLOTHING_TYPES = [
-    { type: 'top', label: '상의', emoji: '👕', color: 'bg-blue-500' },
-    { type: 'bottom', label: '하의', emoji: '👖', color: 'bg-indigo-500' },
-    { type: 'inner', label: '내의', emoji: '🩱', color: 'bg-purple-500' },
-    { type: 'shoes', label: '신발/양말', emoji: '👟', color: 'bg-green-500' },
-    { type: 'hat', label: '모자', emoji: '🧢', color: 'bg-yellow-500' },
-    { type: 'hair', label: '머리색', emoji: '💇', color: 'bg-pink-500' },
+    { type: 'top', label: '상의', emoji: '👕', color: 'bg-gray-700' },
+    { type: 'bottom', label: '하의', emoji: '👖', color: 'bg-gray-600' },
+    { type: 'inner', label: '내의', emoji: '🩱', color: 'bg-gray-500' },
+    { type: 'shoes', label: '신발/양말', emoji: '👟', color: 'bg-gray-800' },
+    { type: 'hat', label: '모자', emoji: '🧢', color: 'bg-gray-400' },
+    { type: 'hair', label: '머리색', emoji: '💇', color: 'bg-gray-900' },
 ];
 
 export const ClothingTypeSelectDialog: React.FC<ClothingTypeSelectDialogProps> = ({
@@ -69,8 +69,8 @@ export const ClothingTypeSelectDialog: React.FC<ClothingTypeSelectDialogProps> =
                         <button
                             key={item.type}
                             className={`p-4 rounded-xl transition-all flex flex-col items-center gap-2 ${selectedType === item.type
-                                    ? `${item.color} text-white scale-105 shadow-lg`
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                ? `${item.color} text-white scale-105 shadow-lg`
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                 }`}
                             onClick={() => setSelectedType(item.type)}
                         >
@@ -92,8 +92,8 @@ export const ClothingTypeSelectDialog: React.FC<ClothingTypeSelectDialogProps> =
                         onClick={handleConfirm}
                         disabled={!selectedType}
                         className={`flex-1 py-3 rounded-xl font-semibold transition ${selectedType
-                                ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white hover:brightness-110'
-                                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            ? 'bg-black text-white hover:bg-gray-800'
+                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             }`}
                     >
                         선택 완료

@@ -20,14 +20,24 @@ export interface CopywritingOutput {
     specOrigin: string;
     heelHeight: string;
     sizeGuide: string;
+    asInfo?: string;
+    precautions?: string;
 }
 
 /**
  * 🔐 5단계 설득형 카피라이팅 생성 - 보안 버전
  */
-export async function generateAICopywriting(imageDataUrl: string): Promise<CopywritingOutput> {
+export async function generateAICopywriting(imageDataUrl: string, heroContent?: any): Promise<CopywritingOutput> {
+    const heroContext = heroContent ? `
+참고할 히어로 섹션 정보:
+- 브랜드: ${heroContent.brandLine || ''}
+- 상품명: ${heroContent.productName || ''}
+- 특징: ${heroContent.technology || ''}
+` : '';
+
     const prompt = `당신은 명품 패션 브랜드의 수석 카피라이터입니다. 
 제품 이미지를 **정밀 분석**하여 구매 전환율을 높이는 **상세페이지 카피**를 작성하세요.
+${heroContext}
 
 ## 🎯 핵심 분석 포인트
 
@@ -58,7 +68,9 @@ export async function generateAICopywriting(imageDataUrl: string): Promise<Copyw
   "specOutsole": "밑창 소재",
   "specOrigin": "원산지",
   "heelHeight": "굽 높이",
-  "sizeGuide": "사이즈 추천"
+  "sizeGuide": "사이즈 추천 (발볼 넓이에 따른 팁 등 포함)",
+  "asInfo": "A/S 안내 및 품질 보증 내용 (명품 브랜드 톤앤매너)",
+  "precautions": "착용 및 보관 시 주의사항 (소재 특성에 맞게 구체적으로)"
 }
 
 **⚠️ 중요: JSON 형식으로만 응답하세요.**`;
@@ -100,7 +112,9 @@ export async function generateAICopywriting(imageDataUrl: string): Promise<Copyw
             specOutsole: "Non-slip Rubber",
             specOrigin: "Made in KOREA",
             heelHeight: "3.5cm",
-            sizeGuide: "정사이즈로 제작되었습니다. 발볼이 넓은 경우 반 사이즈 업을 권장합니다."
+            sizeGuide: "정사이즈로 제작되었습니다. 발볼이 넓은 경우 반 사이즈 업을 권장합니다.",
+            asInfo: "품질 보증 기간은 구매일로부터 1년입니다. 소비자 부주의에 의한 훼손은 유상 수리됩니다.",
+            precautions: "천연 가죽 제품이므로 물세탁은 피해주시고, 가죽 전용 클리너를 사용해주세요."
         };
     }
 }

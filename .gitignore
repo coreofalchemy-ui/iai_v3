@@ -30,3 +30,5 @@ dist-ssr
 # GCP service account
 server/keys/face-library-key.json
 server/keys/face-library-*.json
+.vercel
+.env*.local

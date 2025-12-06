@@ -63,14 +63,23 @@ export async function callGeminiSecure(
     config?: GeminiConfig,
     systemInstruction?: string
 ): Promise<GeminiResponse> {
-    const token = await getAuthToken();
+    // 로컬 개발 시 토큰 스킵
+    let token = '';
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isLocalDev) {
+        token = await getAuthToken();
+    }
+
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+    };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
 
     const response = await fetch(API_ENDPOINT, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-        },
+        headers,
         body: JSON.stringify({
             prompt,
             images,

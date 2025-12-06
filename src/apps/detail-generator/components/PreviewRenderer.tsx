@@ -27,7 +27,7 @@ interface PreviewRendererProps {
     onTextMouseDown?: (e: React.MouseEvent, textId: string) => void;
     onResizeMouseDown?: (e: React.MouseEvent, textId: string) => void;
     onTextChange?: (textId: string, content: string) => void;
-    contentRef?: React.RefObject<HTMLDivElement | null>;
+    contentRef?: React.RefObject<HTMLDivElement>;
     onContextMenu?: (e: React.MouseEvent, type: string, index: number, section: string) => void;
     isDragging?: boolean;
 }
@@ -71,7 +71,7 @@ export const PreviewRenderer: React.FC<PreviewRendererProps> = ({
                 <div
                     key={text.id}
                     data-text-id={text.id}
-                    className={`absolute ${interactive ? 'border-2 border-blue-400 bg-blue-50/10' : ''}`}
+                    className={`absolute ${interactive ? 'border-2 border-black bg-black/5' : ''}`}
                     style={{
                         top: text.top,
                         left: text.left,
@@ -100,7 +100,7 @@ export const PreviewRenderer: React.FC<PreviewRendererProps> = ({
                     {/* Resize handle - only visible in interactive mode */}
                     {interactive && (
                         <div
-                            className="absolute bottom-0 right-0 w-4 h-4 bg-blue-500 cursor-nwse-resize"
+                            className="absolute bottom-0 right-0 w-4 h-4 bg-black cursor-nwse-resize"
                             onMouseDown={(e) => onResizeMouseDown?.(e, text.id)}
                         />
                     )}

@@ -4,6 +4,7 @@ import { generateFaceBatch, upscaleFace, batchFaceReplacement } from '../service
 interface ModelChapterPanelProps {
     data: any;
     onUpdate: (newData: any) => void;
+    lang?: 'ko' | 'en';
 }
 
 export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelProps) {
@@ -98,8 +99,8 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
         <div className="space-y-3" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' }}>
             {/* Reference Face Upload */}
             <div className="bg-[#252525] rounded-lg p-3">
-                <span className="text-[11px] font-medium text-[#999] mb-2 block">참고 얼굴</span>
-                <p className="text-[10px] text-[#666] mb-2">AI 합성용 참고 얼굴 최대 5장 업로드</p>
+                <span className="text-[12px] font-medium text-[#999] mb-2 block">참고 얼굴</span>
+                <p className="text-[11px] text-[#666] mb-2">AI 합성용 참고 얼굴 최대 5장 업로드</p>
                 {referenceFaces.length > 0 && (
                     <div className="grid grid-cols-5 gap-1.5 mb-2">
                         {referenceFaces.map((face, idx) => (
@@ -114,28 +115,28 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
                     <div className="relative aspect-square border border-dashed border-[#3c3c3c] rounded-lg p-3 hover:border-[#555] transition-colors text-center cursor-pointer flex flex-col items-center justify-center">
                         <input type="file" accept="image/*" multiple onChange={handleReferenceFaceUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                         <div className="text-[#666] text-lg mb-1">+</div>
-                        <span className="text-[10px] text-[#666]">업로드 ({referenceFaces.length}/5)</span>
+                        <span className="text-[11px] text-[#666]">업로드 ({referenceFaces.length}/5)</span>
                     </div>
                 )}
             </div>
 
             {/* AI Face Studio */}
             <div className="bg-[#252525] rounded-lg p-3">
-                <span className="text-[11px] font-medium text-[#999] mb-3 block">AI 얼굴 스튜디오</span>
+                <span className="text-[12px] font-medium text-[#999] mb-3 block">AI 얼굴 스튜디오</span>
                 <div className="grid grid-cols-3 gap-2 mb-3">
-                    <select value={gender} onChange={(e) => setGender(e.target.value as any)} className="bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1.5 text-[11px] text-white focus:border-[#0d99ff] focus:outline-none">
+                    <select value={gender} onChange={(e) => setGender(e.target.value as any)} className="bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1.5 text-[11px] text-white focus:border-white focus:outline-none">
                         <option value="female">여성</option>
                         <option value="male">남성</option>
                     </select>
-                    <select value={race} onChange={(e) => setRace(e.target.value)} className="bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1.5 text-[11px] text-white focus:border-[#0d99ff] focus:outline-none">
+                    <select value={race} onChange={(e) => setRace(e.target.value)} className="bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1.5 text-[11px] text-white focus:border-white focus:outline-none">
                         <option value="한국인">한국인</option>
                         <option value="백인">백인</option>
                         <option value="동아시아인">동아시아인</option>
                         <option value="혼혈">혼혈</option>
                     </select>
-                    <input type="number" value={age} onChange={(e) => setAge(e.target.value)} placeholder="나이" className="bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1.5 text-[11px] text-white focus:border-[#0d99ff] focus:outline-none" />
+                    <input type="number" value={age} onChange={(e) => setAge(e.target.value)} placeholder="나이" className="bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1.5 text-[11px] text-white focus:border-white focus:outline-none" />
                 </div>
-                <button onClick={handleGenerate} disabled={isGenerating} className={`w-full py-2 rounded text-[11px] font-medium transition-colors ${isGenerating ? 'bg-[#3c3c3c] text-[#666]' : 'bg-[#0d99ff] text-white hover:bg-[#0b87e0]'}`}>
+                <button onClick={handleGenerate} disabled={isGenerating} className={`w-full py-2 rounded text-[11px] font-medium transition-colors ${isGenerating ? 'bg-[#3c3c3c] text-[#666]' : 'bg-white text-black hover:bg-[#e5e5e5]'}`}>
                     {isGenerating ? (
                         <span className="flex items-center justify-center gap-2">
                             <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
@@ -147,14 +148,14 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
                 {/* Generated Faces Grid */}
                 {generatedFaces.length > 0 && (
                     <div className="mt-4 space-y-3">
-                        <span className="text-[10px] font-medium text-[#666]">얼굴 선택</span>
+                        <span className="text-[11px] font-medium text-[#666]">얼굴 선택</span>
                         <div className="grid grid-cols-2 gap-2">
-                            {generatedFaces.map((face, idx) => (
-                                <div key={idx} onClick={() => handleSelectFace(face)} className={`relative aspect-square cursor-pointer rounded overflow-hidden ring-2 ${selectedFace === face ? 'ring-[#0d99ff]' : 'ring-transparent hover:ring-[#555]'}`}>
+                            {generatedFaces.map((face: string, idx: number) => (
+                                <div key={idx} onClick={() => handleSelectFace(face)} className={`relative aspect-square cursor-pointer rounded overflow-hidden ring-2 ${selectedFace === face ? 'ring-white' : 'ring-transparent hover:ring-[#555]'}`}>
                                     <img src={face} alt={`Face ${idx + 1}`} className="w-full h-full object-cover" />
                                     {selectedFace === face && (
-                                        <div className="absolute inset-0 bg-[#0d99ff]/20 flex items-center justify-center">
-                                            <div className="bg-[#0d99ff] text-white text-[10px] px-2 py-1 rounded">선택됨</div>
+                                        <div className="absolute inset-0 bg-[#888]/20 flex items-center justify-center">
+                                            <div className="bg-white text-black text-[11px] font-bold px-2 py-1 rounded">선택됨</div>
                                         </div>
                                     )}
                                     <div className="absolute top-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded">#{idx + 1}</div>
@@ -166,13 +167,13 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
                         {selectedFace && (
                             <div className="bg-[#2c2c2c] rounded p-3 space-y-2">
                                 <div className="flex items-center gap-3">
-                                    <img src={selectedFace} alt="Selected" className="w-12 h-12 rounded object-cover ring-2 ring-[#0d99ff]" />
+                                    <img src={selectedFace} alt="Selected" className="w-12 h-12 rounded object-cover ring-2 ring-white" />
                                     <div className="flex-1">
                                         <div className="text-[11px] font-medium text-white mb-1">아이덴티티 고정</div>
                                         <p className="text-[10px] text-[#666]">이 얼굴을 프리뷰의 모든 모델 이미지에 적용</p>
                                     </div>
                                 </div>
-                                <button onClick={handleApplyFaceToAllPreview} disabled={isReplacingAllFaces} className={`w-full py-2 rounded text-[11px] font-medium transition-colors ${isReplacingAllFaces ? 'bg-[#3c3c3c] text-[#666]' : 'bg-[#0d99ff] text-white hover:bg-[#0b87e0]'}`}>
+                                <button onClick={handleApplyFaceToAllPreview} disabled={isReplacingAllFaces} className={`w-full py-2 rounded text-[11px] font-medium transition-colors ${isReplacingAllFaces ? 'bg-[#3c3c3c] text-[#666]' : 'bg-white text-black hover:bg-[#e5e5e5]'}`}>
                                     {isReplacingAllFaces ? `교체 중... ${replaceProgress.current}/${replaceProgress.total}` : '전체 적용'}
                                 </button>
                             </div>
@@ -187,7 +188,7 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
                                         try { const upscaled = await upscaleFace(selectedFace); setUpscaledFace(upscaled); }
                                         catch (e) { console.error(e); alert('Upscaling failed'); }
                                         finally { setIsUpscaling(false); }
-                                    }} className="flex-1 bg-[#2c2c2c] text-white py-2 rounded text-[10px] font-medium hover:bg-[#3c3c3c] border border-[#3c3c3c]">
+                                    }} className="flex-1 bg-[#2c2c2c] text-white py-2 rounded text-[11px] font-medium hover:bg-[#3c3c3c] border border-[#3c3c3c]">
                                         4K 업스케일
                                     </button>
                                 )}
@@ -199,7 +200,7 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
                                     const newFileUrl = URL.createObjectURL(file);
                                     onUpdate({ ...data, modelFiles: [...currentModelFiles, file], imageUrls: { ...data.imageUrls, modelShots: [...(data.imageUrls?.modelShots || []), newFileUrl] } });
                                     alert('모델 목록에 추가됨');
-                                }} className="flex-1 bg-[#0d99ff] text-white py-2 rounded text-[10px] font-medium hover:bg-[#0b87e0]">
+                                }} className="flex-1 bg-white text-black py-2 rounded text-[11px] font-medium hover:bg-[#e5e5e5]">
                                     목록에 추가
                                 </button>
                             </div>

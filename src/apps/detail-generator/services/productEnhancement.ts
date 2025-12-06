@@ -187,7 +187,11 @@ export const applyProductEffect = async (
 
     onProgressUpdate('고해상도 리터칭 및 렌더링... (SECURE)');
 
-    const result = await callGeminiSecure(prompt, images);
+    // 1K 해상도로 명시적 설정 - 속도 개선
+    const result = await callGeminiSecure(prompt, images, {
+        aspectRatio: '1:1',
+        imageSize: '1K'
+    });
 
     onProgressUpdate('최종 후처리 중...');
 

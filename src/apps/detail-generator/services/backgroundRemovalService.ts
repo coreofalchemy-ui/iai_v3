@@ -21,12 +21,18 @@ export async function removeBackground(imageBase64: string): Promise<string | nu
         ? imageBase64.split('base64,')[1]
         : imageBase64;
 
-    const prompt = `Remove the background completely from this product image. 
-    Make the background pure transparent (alpha channel = 0).
-    Remove ALL shadows, reflections, and any background elements.
-    Keep ONLY the product itself with clean, sharp edges.
-    Output a PNG image with transparent background.
-    The product should be cleanly isolated without any artifacts.`;
+    const prompt = `Remove the background from this product image and place it on a PURE WHITE background (#FFFFFF).
+    
+[CRITICAL REQUIREMENTS]
+1. Remove ALL background elements completely
+2. Remove ALL shadows and reflections from the original background
+3. Place the product on a CLEAN, PURE WHITE (#FFFFFF) background
+4. Keep the product with clean, sharp edges
+5. The product should be cleanly isolated and centered
+6. Output should have a solid white background - NOT transparent
+
+[OUTPUT]
+Product image with pure white background, professional e-commerce style.`;
 
     try {
         const result = await callGeminiSecure(

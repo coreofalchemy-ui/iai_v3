@@ -12,12 +12,40 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// 로컬 개발 환경 체크
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// 개발용 가짜 유저
+const devUser: User = {
+    id: 'dev-user-123',
+    email: 'dev@localhost.com',
+    aud: 'authenticated',
+    role: 'authenticated',
+    created_at: new Date().toISOString(),
+    app_metadata: {},
+    user_metadata: { name: '개발자' },
+} as User;
+
+const devSession: Session = {
+    access_token: 'dev-token',
+    refresh_token: 'dev-refresh',
+    expires_in: 3600,
+    token_type: 'bearer',
+    user: devUser,
+} as Session;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [session, setSession] = useState<Session | null>(null);
-    const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [session, setSession] = useState<Session | null>(isDev ? devSession : null);
+    const [user, setUser] = useState<User | null>(isDev ? devUser : null);
+    const [loading, setLoading] = useState(!isDev);
 
     useEffect(() => {
+        // 개발 환경에서는 인증 스킵
+        if (isDev) {
+            console.log('🔓 개발 모드: 인증 우회됨');
+            return;
+        }
+
         // 현재 세션 가져오기
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
