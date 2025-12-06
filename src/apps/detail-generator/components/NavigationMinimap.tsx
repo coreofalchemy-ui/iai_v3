@@ -15,6 +15,7 @@ interface NavigationMinimapProps {
     isHoldOn?: boolean;
     onToggleHoldMode?: () => void;
     sectionHeights?: { [key: string]: number };
+    previewWidth?: number;
 }
 
 export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
@@ -29,11 +30,17 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
     onAction,
     isHoldOn = true,
     onToggleHoldMode,
-    sectionHeights
+    sectionHeights,
+    previewWidth = 1000
 }) => {
     const minimapRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
     const [minimapScale, setMinimapScale] = useState(1); // 미니맵 전체 스케일
+
+    // Reset error state when image URL changes
+    React.useEffect(() => {
+        setImgErrors({});
+    }, [data?.imageUrls]);
 
     const getPreviewImage = (section: string) => {
         // 1. 단순 문자열 URL 확인 (커스텀, Hero 등)
@@ -164,9 +171,14 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
                 >
                     <Reorder.Group axis="y" values={sectionOrder} onReorder={onReorder} className="flex flex-col shadow-lg">
                         {sectionOrder.map((section: string) => {
-                            // 높이 계산 (기본 1000px 너비 기준)
-                            const currentHeight = sectionHeights?.[section] || (section === 'hero' ? 1500 : 1000);
-                            const aspectRatio = 1000 / currentHeight;
+                            // 높이 계산 (기본 previewWidth 너비 기준)
+                            // Hero 섹션은 텍스트 양에 따라 높이가 유동적이므로, 캡쳐된 이미지가 있으면 그 비율을 따르도록 함
+                            const currentHeight = sectionHeights?.[section];
+                            // 높이 정보가 없으면 기본값 사용 (하지만 캡쳐되면 업데이트됨)
+                            // 1000px 기준 1.5배 비율 유지 가설 제거 -> auto
+
+                            // aspect-ratio 스타일을 제거하고, 이미지 자체 비율에 맡기거나
+                            // 캡쳐된 이미지가 없을 때만 기본 비율을 유지하도록 수정
 
                             return (
                                 <Reorder.Item key={section} value={section} className="cursor-grab active:cursor-grabbing">
@@ -178,15 +190,20 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
                                                 ? 'ring-2 ring-black z-10'
                                                 : 'hover:brightness-95'}
                                     `}
-                                        style={{ aspectRatio: `${aspectRatio}` }}
+                                        style={{
+                                            // 높이를 강제하지 않고 이미지 비율에 따름 (이미지가 없으면 minHeight 적용)
+                                            // height: currentHeight ? (currentHeight * (200 / previewWidth)) + 'px' : 'auto',
+                                            height: 'auto',
+                                            minHeight: '40px'
+                                        }}
                                         onClick={() => handleMinimapClick(section)}
                                     >
-                                        <div className="w-full h-full bg-white flex items-center justify-center relative">
+                                        <div className="w-full bg-white flex items-center justify-center relative">
                                             {getPreviewImage(section) && !imgErrors[section] ? (
                                                 <img
                                                     src={getPreviewImage(section)!}
                                                     alt={section}
-                                                    className="w-full h-full object-cover"
+                                                    className="w-full h-auto block" // object-cover -> h-auto block to preserve aspect ratio
                                                     onError={() => handleImgError(section)}
                                                 />
                                             ) : (

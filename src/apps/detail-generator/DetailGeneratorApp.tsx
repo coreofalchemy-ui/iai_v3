@@ -434,11 +434,12 @@ export default function DetailGeneratorApp() {
         }
     }, [screen]);
 
-    // Auto-capture sections for minimap
+    // Auto-capture HTML sections for minimap
+    // Optimized to run sequentially and avoid freezing
     useEffect(() => {
         if (screen !== 'result') return;
 
-        const captureTimer = setTimeout(() => {
+        const captureTimer = setTimeout(async () => {
             const sectionsToCapture = ['hero', ...sectionOrder.filter(id => {
                 if (id === 'hero') return true;
                 const isAISection =
@@ -447,25 +448,39 @@ export default function DetailGeneratorApp() {
                     (generatedData.detailTextContent?.asInfo && id.includes('asInfo')) ||
                     (generatedData.noticeContent && id.includes('notice'));
                 if (id.startsWith('grid-')) return true;
-                if (id.startsWith('product-') || id.startsWith('shoe-') || id.startsWith('custom-')) return true;
+                // Only capture custom/product sections if they don't have an image OR if force update needed
+                if (id.startsWith('product-') || id.startsWith('shoe-') || id.startsWith('custom-')) {
+                    // Check if we already have a valid image URL for this section
+                    // If it's a raw blob or data URL, we might want to skip capturing unless specific events happen
+                    const existing = generatedData.imageUrls?.[id];
+                    if (!existing || existing === 'loading') return true;
+                    // Otherwise, assume it's stable and don't re-capture heavily
+                    return false;
+                }
                 return isAISection;
             })];
 
-            sectionsToCapture.forEach(async (sectionId) => {
-                // We only want to auto-capture if we don't have a valid image URL yet, 
-                // OR if it's a HTML section that might have updated
-
+            // Sequential processing to prevent UI freeze
+            for (const sectionId of sectionsToCapture) {
+                // Double check if we need to capture inside the loop (state might have changed)
+                // For AI/HTML sections, we always want to ensure they are up to date if they are in the list
                 try {
-                    console.log(`Using html2canvas for: ${sectionId}`);
+                    // Small delay between captures to yield control to UI
+                    await new Promise(resolve => setTimeout(resolve, 100));
+
                     const imageUrl = await captureSectionAsImage(sectionId);
                     if (imageUrl) {
-                        setGeneratedData((prev: any) => ({
-                            ...prev,
-                            imageUrls: {
-                                ...prev.imageUrls,
-                                [sectionId]: imageUrl
-                            }
-                        }));
+                        // Only update if different (simple check) or just update
+                        setGeneratedData((prev: any) => {
+                            // Avoid unnecessary updates if URL is same (though dataURL is huge, maybe just update)
+                            return {
+                                ...prev,
+                                imageUrls: {
+                                    ...prev.imageUrls,
+                                    [sectionId]: imageUrl
+                                }
+                            };
+                        });
 
                         // Also update height
                         const sectionEl = document.querySelector(`[data-section="${sectionId}"]`) as HTMLElement;
@@ -477,25 +492,20 @@ export default function DetailGeneratorApp() {
                         }
                     }
                 } catch (e) {
-                    console.log(`Auto-capture missed for ${sectionId} (might not be rendered yet)`);
+                    // console.warn(`Auto-capture skipped for ${sectionId}`);
                 }
-            });
-
-
-
-        }, 2000); // 2 second delay to ensure rendering
+            }
+        }, 3000); // Increased delay to 3s to let initial render settle
 
         return () => clearTimeout(captureTimer);
     }, [
         screen,
         sectionOrder,
-        generatedData.heroTextContent,
+        generatedData.heroTextContent, // Triggers when hero text changes
         generatedData.textContent,
         generatedData.specContent,
         generatedData.noticeContent,
-        generatedData.detailTextContent?.sizeGuide,
-        generatedData.detailTextContent?.precautions,
-        generatedData.detailTextContent?.asInfo,
+        generatedData.detailTextContent, // Simplified dependency
         gridSections // Include gridSections to trigger re-capture when grids change
     ]);
 
@@ -1332,15 +1342,15 @@ export default function DetailGeneratorApp() {
         try {
             const canvas = await html2canvas(sectionEl, {
                 useCORS: true,
-                scale: 0.5, // Reduced scale for performance
+                scale: 0.8, // Slightly reduced scale for balance between quality and performance
                 backgroundColor: '#ffffff', // Ensure white background
-                logging: true,
+                logging: false, // Turn off logging
                 onclone: (clonedDoc) => {
-                    console.log(`Clone created for ${sectionId}`, clonedDoc.body);
+                    // console.log(`Clone created for ${sectionId}`, clonedDoc.body);
                 }
             });
-            console.log(`✅ html2canvas success for ${sectionId}`);
-            return canvas.toDataURL('image/jpeg', 0.8);
+            // console.log(`✅ html2canvas success for ${sectionId}`);
+            return canvas.toDataURL('image/jpeg', 0.85); // Reasonable quality JPEG
         } catch (error) {
             console.error(`❌ html2canvas failed for ${sectionId}:`, error);
             throw error;
@@ -1803,6 +1813,7 @@ export default function DetailGeneratorApp() {
                                     isHoldOn={isHoldOn}
                                     onToggleHoldMode={handleToggleGlobalHold}
                                     sectionHeights={sectionHeights}
+                                    previewWidth={previewWidth === '100%' ? 1000 : parseInt(previewWidth)}
                                 />
                             </div>
                         )}
