@@ -657,9 +657,10 @@ export default function DetailGeneratorApp() {
         }
     };
 
-    // HTML 내보내기 (이미지 base64 포함, 반응형)
+    // HTML 내보내기 (이미지 base64 포함, 선택한 디바이스 너비 고정)
     const handleExportHTML = async () => {
         setLoading(true);
+        const targetWidth = previewDevice === 'desktop' ? 1000 : (previewDevice === 'tablet' ? 768 : 640);
 
         try {
             // blob URL을 base64로 변환하는 함수
@@ -698,13 +699,20 @@ export default function DetailGeneratorApp() {
     <title>${generatedData.heroTextContent?.productName || 'Product Detail'}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Noto Sans KR', -apple-system, sans-serif; background: #fff; }
-        .container { max-width: 1000px; margin: 0 auto; }
+        body { 
+            font-family: 'Noto Sans KR', -apple-system, sans-serif; 
+            background: #f5f5f5; 
+            display: flex;
+            justify-content: center;
+        }
+        .container { 
+            width: ${targetWidth}px; 
+            max-width: ${targetWidth}px;
+            min-width: ${targetWidth}px;
+            background: #fff; 
+        }
         img { width: 100%; height: auto; display: block; }
         .section { margin-bottom: 0; }
-        @media (max-width: 768px) {
-            .container { padding: 0; }
-        }
     </style>
 </head>
 <body>
@@ -1567,26 +1575,26 @@ export default function DetailGeneratorApp() {
     };
 
     return (
-        <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
-            {/* Header */}
-            <header className="h-14 bg-white border-b flex items-center justify-between px-4 z-50 shadow-sm flex-shrink-0">
+        <div className="flex flex-col h-screen bg-[#F5F5F7] overflow-hidden">
+            {/* Header - Grey on Grey Design */}
+            <header className="h-14 bg-white border-b border-[#E2E2E8] flex items-center justify-between px-6 z-50 flex-shrink-0">
                 <div className="flex items-center gap-3">
                     {screen === 'result' && (
                         <button
                             onClick={() => navigate('/')}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="p-2 hover:bg-[#F0F0F4] rounded-lg transition-colors"
                             title="뒤로가기"
                         >
-                            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-5 h-5 text-[#6E6E73]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                             </svg>
                         </button>
                     )}
                     <div className="flex items-center gap-2">
-                        <h1 className="text-lg font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                        <h1 className="text-lg font-bold text-[#111111]">
                             I AM IMPACT
                         </h1>
-                        <span className="text-xs px-2 py-0.5 bg-gradient-to-r from-purple-100 to-blue-100 text-purple-700 rounded-full font-bold">
+                        <span className="text-xs px-2 py-0.5 bg-[#F0F0F4] text-[#6E6E73] rounded-full font-semibold">
                             아이엠 임펙트
                         </span>
                     </div>
@@ -1595,40 +1603,40 @@ export default function DetailGeneratorApp() {
                     {screen === 'result' && (
                         <button
                             onClick={handleNewProject}
-                            className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-md transition-colors border border-gray-200"
+                            className="px-3 py-1.5 text-sm text-[#6E6E73] hover:bg-[#F0F0F4] rounded-lg transition-colors border border-[#E2E2E8]"
                         >
                             + 새로 만들기
                         </button>
                     )}
                     <button
                         onClick={handleExportHTML}
-                        className="px-3 py-1.5 bg-white border border-purple-300 text-purple-600 text-sm font-bold rounded-md hover:bg-purple-50 transition-colors"
+                        className="px-3 py-1.5 bg-white border border-[#E2E2E8] text-[#111111] text-sm font-semibold rounded-lg hover:bg-[#F0F0F4] transition-colors"
                     >
-                        HTML
+                        HTML 저장
                     </button>
                     <button
                         onClick={handleExportJPG}
-                        className="px-4 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-bold rounded-md hover:opacity-90 transition-opacity shadow-sm"
+                        className="px-4 py-1.5 bg-[#111111] text-white text-sm font-semibold rounded-full hover:opacity-90 transition-opacity"
                     >
-                        JPG ({previewDevice === 'mobile' ? '640px' : previewDevice === 'tablet' ? '768px' : '1000px'})
+                        JPG 저장 ({previewDevice === 'mobile' ? '640px' : previewDevice === 'tablet' ? '768px' : '1000px'})
                     </button>
                 </div>
             </header>
 
-            {/* Quick Transfer Loading Overlay */}
+            {/* Quick Transfer Loading Overlay - Grey on Grey */}
             {quickTransferProgress && (
-                <div className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center">
-                    <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4 text-center">
-                        <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-                        <h3 className="text-xl font-bold text-gray-800 mb-2">Quick Transfer 생성 중</h3>
-                        <p className="text-gray-600 mb-4">{quickTransferProgress.status}</p>
-                        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center">
+                    <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4 text-center border border-[#E2E2E8]">
+                        <div className="w-16 h-16 border-4 border-[#111111] border-t-transparent rounded-full animate-spin mx-auto mb-6" />
+                        <h3 className="text-xl font-bold text-[#111111] mb-2">Quick Transfer 생성 중</h3>
+                        <p className="text-[#6E6E73] mb-4">{quickTransferProgress.status}</p>
+                        <div className="w-full bg-[#F0F0F4] rounded-full h-3 overflow-hidden">
                             <div
-                                className="h-full bg-gradient-to-r from-purple-600 to-pink-600 transition-all duration-300"
+                                className="h-full bg-[#111111] transition-all duration-300"
                                 style={{ width: `${(quickTransferProgress.current / quickTransferProgress.total) * 100}%` }}
                             />
                         </div>
-                        <p className="text-sm text-gray-500 mt-2">{quickTransferProgress.current} / {quickTransferProgress.total}</p>
+                        <p className="text-sm text-[#A1A1AA] mt-2">{quickTransferProgress.current} / {quickTransferProgress.total}</p>
                     </div>
                 </div>
             )}
@@ -1636,8 +1644,8 @@ export default function DetailGeneratorApp() {
             <main className="flex-grow overflow-hidden relative">
                 {generatedData && (
                     <div className="flex h-full">
-                        {/* Left Panel Wrapper */}
-                        <div className="w-[420px] border-r bg-white hidden md:flex flex-col relative z-10 flex-shrink-0 h-full shadow-xl">
+                        {/* Left Panel Wrapper - Grey on Grey */}
+                        <div className="w-[420px] border-r border-[#E2E2E8] bg-white hidden md:flex flex-col relative z-10 flex-shrink-0 h-full">
                             <div className="flex-grow overflow-y-auto custom-scrollbar">
                                 <AdjustmentPanel
                                     data={generatedData}
@@ -1658,56 +1666,69 @@ export default function DetailGeneratorApp() {
                         </div>
 
                         {/* Middle Panel */}
-                        <div ref={middlePanelRef} className="flex-grow h-full bg-gray-100 overflow-hidden relative flex flex-col">
-                            {/* Responsive Toolbar with Zoom Controls */}
-                            <div className="h-11 bg-white border-b flex items-center justify-center gap-6 px-4 shadow-sm z-20 flex-shrink-0">
-                                {/* Zoom Controls */}
-                                <div className="flex items-center gap-1 bg-gray-100 rounded-md px-1 py-0.5">
+                        <div ref={middlePanelRef} className="flex-grow h-full bg-[#F5F5F7] overflow-hidden relative flex flex-col">
+                            {/* Responsive Toolbar with Zoom Controls - Floating Cards Style */}
+                            <div className="h-14 bg-[#F5F5F7] flex items-center justify-center gap-3 px-4 z-20 flex-shrink-0">
+                                {/* Zoom Controls - Floating Card */}
+                                <div className="flex items-center gap-1 bg-white rounded-xl px-3 py-1.5 shadow-sm border border-[#E2E2E8]">
                                     <button
                                         onClick={() => setPreviewScale(prev => Math.max(0.2, prev - 0.1))}
-                                        className="w-6 h-6 flex items-center justify-center text-gray-600 hover:bg-white rounded"
+                                        className="w-6 h-6 flex items-center justify-center text-[#6E6E73] hover:bg-[#F0F0F4] rounded-md"
                                     >−</button>
-                                    <span className="text-[11px] font-bold text-gray-600 w-10 text-center">{Math.round(previewScale * 100)}%</span>
+                                    <span className="text-[11px] font-semibold text-[#111111] min-w-[45px] text-center">{Math.round(previewScale * 100)}%</span>
                                     <button
                                         onClick={() => setPreviewScale(prev => Math.min(1.5, prev + 0.1))}
-                                        className="w-6 h-6 flex items-center justify-center text-gray-600 hover:bg-white rounded"
+                                        className="w-6 h-6 flex items-center justify-center text-[#6E6E73] hover:bg-[#F0F0F4] rounded-md"
                                     >+</button>
-                                    <div className="w-px h-4 bg-gray-300 mx-0.5" />
+                                    <div className="w-px h-4 bg-[#E2E2E8] mx-1.5" />
                                     <button
                                         onClick={() => setPreviewScale(0.5)}
-                                        className="px-1.5 py-0.5 text-[10px] text-purple-600 hover:bg-purple-50 rounded font-bold"
+                                        className="px-2 py-1 text-[10px] text-[#6E6E73] hover:bg-[#F0F0F4] rounded-md font-semibold"
                                     >전체</button>
                                     <button
                                         onClick={() => setPreviewScale(1)}
-                                        className="px-1.5 py-0.5 text-[10px] text-blue-600 hover:bg-blue-50 rounded font-bold"
+                                        className="px-2 py-1 text-[10px] text-[#111111] hover:bg-[#F0F0F4] rounded-md font-bold"
                                     >100%</button>
                                 </div>
 
-                                <div className="w-px h-6 bg-gray-200" />
-
-                                {/* Device Selector */}
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-bold text-gray-400 uppercase">Preview:</span>
-                                    <div className="flex bg-gray-100 rounded-md p-0.5">
+                                {/* Device Selector - Floating Card */}
+                                <div className="flex items-center gap-2 bg-white rounded-xl px-3 py-1.5 shadow-sm border border-[#E2E2E8]">
+                                    <span className="text-[10px] font-semibold text-[#A1A1AA] uppercase tracking-wide">Preview:</span>
+                                    <div className="flex bg-[#F0F0F4] rounded-lg p-0.5">
                                         <button
                                             onClick={() => handleDeviceChange('mobile')}
-                                            className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${previewDevice === 'mobile' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                                            className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${previewDevice === 'mobile' ? 'bg-white text-[#111111] shadow-sm' : 'text-[#A1A1AA] hover:text-[#6E6E73]'}`}
                                         >
                                             📱 Mobile
                                         </button>
                                         <button
                                             onClick={() => handleDeviceChange('tablet')}
-                                            className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${previewDevice === 'tablet' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                                            className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${previewDevice === 'tablet' ? 'bg-white text-[#111111] shadow-sm' : 'text-[#A1A1AA] hover:text-[#6E6E73]'}`}
                                         >
                                             📱 Tablet
                                         </button>
                                         <button
                                             onClick={() => handleDeviceChange('desktop')}
-                                            className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${previewDevice === 'desktop' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                                            className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${previewDevice === 'desktop' ? 'bg-white text-[#111111] shadow-sm' : 'text-[#A1A1AA] hover:text-[#6E6E73]'}`}
                                         >
                                             💻 Desktop
                                         </button>
                                     </div>
+                                </div>
+
+                                {/* Minimap Toggle - Floating Card */}
+                                <div className="flex items-center gap-2 bg-white rounded-xl px-3 py-1.5 shadow-sm border border-[#E2E2E8]">
+                                    <span className="text-[10px] font-semibold text-[#A1A1AA] uppercase tracking-wide">Minimap</span>
+                                    <button
+                                        onClick={() => setIsMinimapVisible(!isMinimapVisible)}
+                                        className="relative w-9 h-5 rounded-full transition-colors"
+                                        style={{ background: isMinimapVisible ? '#111111' : '#E2E2E8' }}
+                                    >
+                                        <div
+                                            className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all"
+                                            style={{ left: isMinimapVisible ? 18 : 2 }}
+                                        />
+                                    </button>
                                 </div>
                             </div>
 
@@ -1776,45 +1797,38 @@ export default function DetailGeneratorApp() {
                             </div>
                         </div>
 
-                        {/* Minimap Toggle Button */}
-                        <button
-                            onClick={() => setIsMinimapVisible(!isMinimapVisible)}
-                            className="fixed right-4 bottom-4 z-50 bg-indigo-500 text-white p-3 rounded-full shadow-lg hover:bg-indigo-600 transition lg:block hidden"
-                            title={isMinimapVisible ? '미니맵 숨기기' : '미니맵 보기'}
-                        >
-                            {isMinimapVisible ? '➡️' : '🗺️'}
-                        </button>
-
-                        {/* Right Panel (Mini Map) - Now with drag to reorder */}
+                        {/* Right Panel (Mini Map) - Floating Card Style */}
                         {isMinimapVisible && (
-                            <div className="w-[140px] border-l bg-white hidden lg:flex flex-col relative z-10 flex-shrink-0 h-full">
-                                <NavigationMinimap
-                                    activeSection={activeSection}
-                                    onSectionClick={(section) => {
-                                        const el = document.querySelector(`[data-section="${section}"]`);
-                                        el?.scrollIntoView({ behavior: 'smooth' });
-                                    }}
-                                    data={generatedData}
-                                    sectionOrder={sectionOrder}
-                                    onReorder={(newOrder) => {
-                                        console.log('New minimap order:', newOrder);
-                                        setSectionOrder(newOrder);
-                                        // Also update in generatedData if needed
-                                        setGeneratedData((prev: any) => ({
-                                            ...prev,
-                                            sectionOrder: newOrder
-                                        }));
-                                    }}
-                                    onAddSection={handleAddSection}
-                                    previewRef={previewRef}
-                                    previewHtml={previewHtml}
-                                    textElements={textElements}
-                                    onAction={handleAction}
-                                    isHoldOn={isHoldOn}
-                                    onToggleHoldMode={handleToggleGlobalHold}
-                                    sectionHeights={sectionHeights}
-                                    previewWidth={previewWidth === '100%' ? 1000 : parseInt(previewWidth)}
-                                />
+                            <div className="w-[150px] hidden lg:flex flex-col relative z-10 flex-shrink-0 h-full p-2 bg-[#F5F5F7]">
+                                <div className="flex-1 bg-white rounded-xl shadow-sm border border-[#E2E2E8] overflow-hidden">
+                                    <NavigationMinimap
+                                        activeSection={activeSection}
+                                        onSectionClick={(section) => {
+                                            const el = document.querySelector(`[data-section="${section}"]`);
+                                            el?.scrollIntoView({ behavior: 'smooth' });
+                                        }}
+                                        data={generatedData}
+                                        sectionOrder={sectionOrder}
+                                        onReorder={(newOrder) => {
+                                            console.log('New minimap order:', newOrder);
+                                            setSectionOrder(newOrder);
+                                            // Also update in generatedData if needed
+                                            setGeneratedData((prev: any) => ({
+                                                ...prev,
+                                                sectionOrder: newOrder
+                                            }));
+                                        }}
+                                        onAddSection={handleAddSection}
+                                        previewRef={previewRef}
+                                        previewHtml={previewHtml}
+                                        textElements={textElements}
+                                        onAction={handleAction}
+                                        isHoldOn={isHoldOn}
+                                        onToggleHoldMode={handleToggleGlobalHold}
+                                        sectionHeights={sectionHeights}
+                                        previewWidth={previewWidth === '100%' ? 1000 : parseInt(previewWidth)}
+                                    />
+                                </div>
                             </div>
                         )}
                     </div>

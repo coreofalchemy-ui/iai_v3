@@ -8,10 +8,11 @@ import ContentGeneratorApp from './apps/content-generator/ContentGeneratorApp';
 import SketchEditorApp from './apps/sketch-editor/SketchEditorApp';
 import ModelGeneratorApp from './apps/model-generator/ModelGeneratorApp';
 import GeminiChatApp from './apps/gemini-chat/GeminiChatApp';
+import PatternCreatorApp from './apps/pattern-creator/PatternCreatorApp';
 
 // 인증이 필요한 라우트를 감싸는 컴포넌트
 function ProtectedRoutes() {
-    const { user, loading, signOut } = useAuth();
+    const { user, loading } = useAuth();
 
     // 로딩 중
     if (loading) {
@@ -32,25 +33,15 @@ function ProtectedRoutes() {
 
     // 로그인 됨 → 앱 라우터
     return (
-        <>
-            {/* 로그아웃 버튼 (고정) */}
-            <button
-                onClick={() => signOut()}
-                className="fixed top-4 right-4 z-[9999] px-3 py-1.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white text-xs font-medium rounded-lg border border-white/20 transition-all"
-                title="로그아웃"
-            >
-                👤 {user.email?.split('@')[0]} | 로그아웃
-            </button>
-
-            <Routes>
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/detail-generator" element={<DetailGeneratorApp />} />
-                <Route path="/content-generator" element={<ContentGeneratorApp />} />
-                <Route path="/sketch-editor" element={<SketchEditorApp />} />
-                <Route path="/model-generator" element={<ModelGeneratorApp />} />
-                <Route path="/gemini-chat" element={<GeminiChatApp />} />
-            </Routes>
-        </>
+        <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/detail-generator" element={<DetailGeneratorApp />} />
+            <Route path="/content-generator" element={<ContentGeneratorApp />} />
+            <Route path="/sketch-editor" element={<SketchEditorApp />} />
+            <Route path="/model-generator" element={<ModelGeneratorApp />} />
+            <Route path="/gemini-chat" element={<GeminiChatApp />} />
+            <Route path="/pattern-creator" element={<PatternCreatorApp />} />
+        </Routes>
     );
 }
 

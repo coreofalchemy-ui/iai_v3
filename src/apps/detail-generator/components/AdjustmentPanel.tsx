@@ -403,29 +403,28 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
         { id: 'closeup' as Section, label: lang === 'ko' ? '디테일' : 'Detail' }
     ];
 
+    const colors = { bgBase: '#F5F5F7', bgSurface: '#FFFFFF', bgSubtle: '#F0F0F4', borderSoft: '#E2E2E8', textPrimary: '#111111', textSecondary: '#6E6E73', textMuted: '#A1A1AA', accentPrimary: '#111111' };
+
     return (
-        <div className="h-full flex flex-col bg-[#1e1e1e] text-[#e5e5e5]" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' }}>
+        <div className="h-full flex flex-col" style={{ background: colors.bgSubtle, fontFamily: '-apple-system, sans-serif', color: colors.textPrimary }}>
             <SliderStyles />
             {/* 헤더 */}
-            <div className="flex-shrink-0 h-7 bg-[#2c2c2c] border-b border-[#3c3c3c] flex items-center justify-between px-2">
-                <span className="text-[12px] font-medium tracking-wide text-white">Design</span>
-                <div className="flex items-center bg-[#1e1e1e] rounded overflow-hidden">
-                    <button onClick={() => setLang('ko')} className={`px-1 py-0.5 text-[11px] font-medium transition-colors ${lang === 'ko' ? 'bg-white text-black' : 'text-[#666] hover:text-white'}`}>KR</button>
-                    <button onClick={() => setLang('en')} className={`px-1 py-0.5 text-[11px] font-medium transition-colors ${lang === 'en' ? 'bg-white text-black' : 'text-[#666] hover:text-white'}`}>EN</button>
+            <div style={{ background: colors.bgSurface, borderBottom: `1px solid ${colors.borderSoft}` }} className="flex-shrink-0 h-10 flex items-center justify-between px-3">
+                <span style={{ fontSize: 13, fontWeight: 600, color: colors.textPrimary }}>Design</span>
+                <div style={{ background: colors.bgSubtle, borderRadius: 6, padding: 2 }} className="flex items-center overflow-hidden">
+                    <button onClick={() => setLang('ko')} style={{ padding: '4px 8px', fontSize: 11, fontWeight: 500, borderRadius: 4, background: lang === 'ko' ? colors.accentPrimary : 'transparent', color: lang === 'ko' ? '#FFF' : colors.textMuted }}>KR</button>
+                    <button onClick={() => setLang('en')} style={{ padding: '4px 8px', fontSize: 11, fontWeight: 500, borderRadius: 4, background: lang === 'en' ? colors.accentPrimary : 'transparent', color: lang === 'en' ? '#FFF' : colors.textMuted }}>EN</button>
                 </div>
             </div>
 
             {/* 탭 */}
-            <div className="flex-shrink-0 border-b border-[#3c3c3c] bg-[#252525]">
+            <div style={{ background: colors.bgSurface, borderBottom: `1px solid ${colors.borderSoft}` }} className="flex-shrink-0">
                 <nav className="flex">
                     {sections.map(section => (
                         <button
                             key={section.id}
                             onClick={() => setActiveSection(section.id)}
-                            className={`flex-1 px-1 py-2 text-[12px] font-medium transition-colors ${activeSection === section.id
-                                ? 'text-white bg-[#1e1e1e] border-b-2 border-white'
-                                : 'text-[#999] hover:text-white hover:bg-[#2c2c2c]'
-                                }`}
+                            style={{ flex: 1, padding: '10px 4px', fontSize: 11, fontWeight: 500, transition: 'all 0.15s', background: 'transparent', borderBottom: activeSection === section.id ? `2px solid ${colors.accentPrimary}` : '2px solid transparent', color: activeSection === section.id ? colors.textPrimary : colors.textMuted }}
                         >
                             {section.label}
                         </button>
@@ -620,57 +619,57 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                 {activeSection === 'closeup' && (
                     <div className="space-y-2">
                         {/* 텍스트 요소 */}
-                        <div className="bg-[#252525] rounded p-2">
+                        <div style={{ background: colors.bgSurface, borderRadius: 12, padding: 12, border: `1px solid ${colors.borderSoft}` }}>
                             <div className="flex justify-between items-center mb-2">
-                                <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? '텍스트 요소' : 'Text Elements'}</span>
-                                <button onClick={handleAddText} className="px-1.5 py-0.5 bg-white text-black text-[11px] font-medium rounded hover:bg-[#e5e5e5]">+</button>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? '텍스트 요소' : 'Text Elements'}</span>
+                                <button onClick={handleAddText} style={{ padding: '4px 8px', background: colors.accentPrimary, color: '#FFF', fontSize: 11, fontWeight: 500, borderRadius: 6 }}>+</button>
                             </div>
-                            <div className="text-[11px] text-[#666] mb-2">Active: <span className="text-white">{previewActiveSection || 'None'}</span></div>
+                            <div style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8 }}>Active: <span style={{ color: colors.textPrimary }}>{previewActiveSection || 'None'}</span></div>
                             <div className="space-y-1 max-h-[120px] overflow-y-auto">
                                 {textElements.map((text: TextElement) => (
-                                    <div key={text.id} onClick={() => setSelectedTextId(text.id)} className={`p-1.5 rounded cursor-pointer flex justify-between items-center ${selectedTextId === text.id ? 'bg-white/20 ring-1 ring-white' : 'bg-[#2c2c2c] hover:bg-[#3c3c3c]'}`}>
-                                        <span className="text-[12px] truncate max-w-[100px] text-white">{text.content}</span>
-                                        <button onClick={(e) => { e.stopPropagation(); onDeleteTextElement?.(text.id); }} className="text-[#666] hover:text-red-400 text-[10px]">×</button>
+                                    <div key={text.id} onClick={() => setSelectedTextId(text.id)} style={{ padding: 8, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: selectedTextId === text.id ? colors.bgSubtle : 'transparent', border: selectedTextId === text.id ? `1px solid ${colors.accentPrimary}` : '1px solid transparent' }}>
+                                        <span style={{ fontSize: 12, maxWidth: 100, color: colors.textPrimary }} className="truncate">{text.content}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); onDeleteTextElement?.(text.id); }} style={{ color: colors.textMuted, fontSize: 10 }} className="hover:text-red-400">×</button>
                                     </div>
                                 ))}
-                                {textElements.length === 0 && <div className="text-center text-[#666] text-[12px] py-4">{lang === 'ko' ? '텍스트 없음' : 'No text'}</div>}
+                                {textElements.length === 0 && <div style={{ textAlign: 'center', color: colors.textMuted, fontSize: 12, padding: 16 }}>{lang === 'ko' ? '텍스트 없음' : 'No text'}</div>}
                             </div>
                             {selectedText && onUpdateTextElement && (
-                                <div className="border-t border-[#3c3c3c] pt-2 mt-2 space-y-1.5">
-                                    <textarea className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[12px] text-white resize-none focus:border-white focus:outline-none" rows={2} value={selectedText.content} onChange={(e) => onUpdateTextElement(selectedText.id, 'content', e.target.value)} />
+                                <div style={{ borderTop: `1px solid ${colors.borderSoft}`, paddingTop: 10, marginTop: 10 }} className="space-y-1.5">
+                                    <textarea style={{ width: '100%', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, color: colors.textPrimary, resize: 'none' }} rows={2} value={selectedText.content} onChange={(e) => onUpdateTextElement(selectedText.id, 'content', e.target.value)} />
                                     <div className="grid grid-cols-2 gap-1.5">
-                                        <input type="number" className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[12px] text-white focus:border-white focus:outline-none" value={selectedText.fontSize} onChange={(e) => onUpdateTextElement(selectedText.id, 'fontSize', parseInt(e.target.value))} />
-                                        <input type="color" className="w-full h-6 bg-[#2c2c2c] border border-[#3c3c3c] rounded cursor-pointer" value={selectedText.color || '#000000'} onChange={(e) => onUpdateTextElement(selectedText.id, 'color', e.target.value)} />
+                                        <input type="number" style={{ width: '100%', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, padding: '6px 10px', fontSize: 12, color: colors.textPrimary }} value={selectedText.fontSize} onChange={(e) => onUpdateTextElement(selectedText.id, 'fontSize', parseInt(e.target.value))} />
+                                        <input type="color" style={{ width: '100%', height: 28, background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, cursor: 'pointer' }} value={selectedText.color || '#000000'} onChange={(e) => onUpdateTextElement(selectedText.id, 'color', e.target.value)} />
                                     </div>
                                 </div>
                             )}
                         </div>
 
                         {/* 선 추가 */}
-                        <div className="bg-[#252525] rounded p-2">
+                        <div style={{ background: colors.bgSurface, borderRadius: 12, padding: 12, border: `1px solid ${colors.borderSoft}` }}>
                             <div className="flex justify-between items-center mb-2">
-                                <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? '선 추가' : 'Add Line'}</span>
-                                <button onClick={handleAddLine} className="px-1.5 py-0.5 bg-white text-black text-[11px] font-medium rounded hover:bg-[#e5e5e5]">+</button>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? '선 추가' : 'Add Line'}</span>
+                                <button onClick={handleAddLine} style={{ padding: '4px 8px', background: colors.accentPrimary, color: '#FFF', fontSize: 11, fontWeight: 500, borderRadius: 6 }}>+</button>
                             </div>
                             <div className="space-y-2">
                                 <div>
-                                    <label className="text-[11px] text-[#666] block mb-1">{lang === 'ko' ? '선 종류' : 'Line Type'}</label>
+                                    <label style={{ fontSize: 11, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '선 종류' : 'Line Type'}</label>
                                     <div className="flex gap-1">
                                         <button
                                             onClick={() => setLineType('straight')}
-                                            className={`flex-1 py-1 text-[11px] rounded ${lineType === 'straight' ? 'bg-white/20 text-white border border-white/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                            style={{ flex: 1, padding: '6px 4px', fontSize: 11, borderRadius: 6, background: lineType === 'straight' ? colors.accentPrimary : colors.bgSubtle, color: lineType === 'straight' ? '#FFF' : colors.textSecondary, border: `1px solid ${lineType === 'straight' ? colors.accentPrimary : colors.borderSoft}` }}
                                         >
                                             ─ {lang === 'ko' ? '직선' : 'Straight'}
                                         </button>
                                         <button
                                             onClick={() => setLineType('curved')}
-                                            className={`flex-1 py-1 text-[11px] rounded ${lineType === 'curved' ? 'bg-white/20 text-white border border-white/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                            style={{ flex: 1, padding: '6px 4px', fontSize: 11, borderRadius: 6, background: lineType === 'curved' ? colors.accentPrimary : colors.bgSubtle, color: lineType === 'curved' ? '#FFF' : colors.textSecondary, border: `1px solid ${lineType === 'curved' ? colors.accentPrimary : colors.borderSoft}` }}
                                         >
                                             ⌒ {lang === 'ko' ? '곡선' : 'Curved'}
                                         </button>
                                         <button
                                             onClick={() => setLineType('angled')}
-                                            className={`flex-1 py-1 text-[11px] rounded ${lineType === 'angled' ? 'bg-white/20 text-white border border-white/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                            style={{ flex: 1, padding: '6px 4px', fontSize: 11, borderRadius: 6, background: lineType === 'angled' ? colors.accentPrimary : colors.bgSubtle, color: lineType === 'angled' ? '#FFF' : colors.textSecondary, border: `1px solid ${lineType === 'angled' ? colors.accentPrimary : colors.borderSoft}` }}
                                         >
                                             └ {lang === 'ko' ? '꺾은선' : 'Angled'}
                                         </button>
@@ -678,69 +677,70 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     <div>
-                                        <label className="text-[11px] text-[#666] block mb-1">{lang === 'ko' ? '굵기' : 'Width'}: {lineWidth}px</label>
+                                        <label style={{ fontSize: 11, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '굵기' : 'Width'}: {lineWidth}px</label>
                                         <input
                                             type="range"
                                             min="1"
                                             max="10"
                                             value={lineWidth}
                                             onChange={(e) => setLineWidth(parseInt(e.target.value))}
-                                            className="w-full h-auto accent-white cursor-pointer"
+                                            className="w-full h-auto cursor-pointer"
+                                            style={{ accentColor: colors.accentPrimary }}
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] text-[#666] block mb-1">{lang === 'ko' ? '끝선' : 'End Cap'}</label>
+                                        <label style={{ fontSize: 11, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '끝선' : 'End Cap'}</label>
                                         <div className="flex gap-1">
                                             <button
                                                 onClick={() => { setLineCap('round'); setLineEnd('none'); }}
-                                                className={`flex-1 py-1 text-[11px] rounded ${lineCap === 'round' && lineEnd === 'none' ? 'bg-white/20 text-white border border-white/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c]'}`}
+                                                style={{ flex: 1, padding: '6px 4px', fontSize: 11, borderRadius: 6, background: lineCap === 'round' && lineEnd === 'none' ? colors.accentPrimary : colors.bgSubtle, color: lineCap === 'round' && lineEnd === 'none' ? '#FFF' : colors.textSecondary, border: `1px solid ${colors.borderSoft}` }}
                                             >●</button>
                                             <button
                                                 onClick={() => { setLineCap('square'); setLineEnd('none'); }}
-                                                className={`flex-1 py-1 text-[11px] rounded ${lineCap === 'square' && lineEnd === 'none' ? 'bg-white/20 text-white border border-white/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c]'}`}
+                                                style={{ flex: 1, padding: '6px 4px', fontSize: 11, borderRadius: 6, background: lineCap === 'square' && lineEnd === 'none' ? colors.accentPrimary : colors.bgSubtle, color: lineCap === 'square' && lineEnd === 'none' ? '#FFF' : colors.textSecondary, border: `1px solid ${colors.borderSoft}` }}
                                             >■</button>
                                             <button
                                                 onClick={() => setLineEnd('arrow')}
-                                                className={`flex-1 py-1 text-[11px] rounded ${lineEnd === 'arrow' ? 'bg-white/20 text-white border border-white/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c]'}`}
+                                                style={{ flex: 1, padding: '6px 4px', fontSize: 11, borderRadius: 6, background: lineEnd === 'arrow' ? colors.accentPrimary : colors.bgSubtle, color: lineEnd === 'arrow' ? '#FFF' : colors.textSecondary, border: `1px solid ${colors.borderSoft}` }}
                                             >→</button>
                                         </div>
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="text-[11px] text-[#666] block mb-1">{lang === 'ko' ? '색상' : 'Color'}</label>
+                                    <label style={{ fontSize: 11, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '색상' : 'Color'}</label>
                                     <input
                                         type="color"
                                         value={lineColor}
                                         onChange={(e) => setLineColor(e.target.value)}
-                                        className="w-full h-6 bg-[#2c2c2c] border border-[#3c3c3c] rounded cursor-pointer"
+                                        style={{ width: '100%', height: 28, background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, cursor: 'pointer' }}
                                     />
                                 </div>
                             </div>
                         </div>
 
                         {/* 그리드/콜라주 추가 */}
-                        <div className="bg-[#252525] rounded p-2">
+                        <div style={{ background: colors.bgSurface, borderRadius: 12, padding: 12, border: `1px solid ${colors.borderSoft}` }}>
                             <div
-                                className="flex justify-between items-center cursor-pointer hover:bg-[#2c2c2c] -mx-2 -mt-2 px-2 pt-2 pb-2 rounded-t"
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsedSections.grid ? 0 : 10 }}
                                 onClick={() => toggleSection('grid')}
                             >
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] text-[#555] transition-transform ${collapsedSections.grid ? '' : 'rotate-90'}`}>▶</span>
-                                    <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? '그리드/콜라주' : 'Grid/Collage'}</span>
+                                    <span style={{ fontSize: 10, color: colors.textMuted, transition: 'transform 0.15s' }} className={collapsedSections.grid ? '' : 'rotate-90'}>▶</span>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? '그리드/콜라주' : 'Grid/Collage'}</span>
                                 </div>
-                                <span className="text-[11px] text-white">{gridCols}×{gridRows}</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: colors.textPrimary }}>{gridCols}×{gridRows}</span>
                             </div>
                             {!collapsedSections.grid && (
-                                <div className="space-y-2 mt-2">
+                                <div className="space-y-2">
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
-                                            <label className="text-[11px] text-[#666] block mb-1">{lang === 'ko' ? '가로 칸' : 'Columns'}</label>
+                                            <label style={{ fontSize: 11, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '가로 칸' : 'Columns'}</label>
                                             <div className="flex gap-1">
                                                 {[1, 2, 3, 4].map(n => (
                                                     <button
                                                         key={n}
                                                         onClick={() => setGridCols(n)}
-                                                        className={`flex-1 py-1 text-[12px] font-bold rounded ${n === gridCols ? 'bg-white/20 text-white border border-white/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                                        style={{ flex: 1, padding: '6px 4px', fontSize: 12, fontWeight: 600, borderRadius: 6, background: n === gridCols ? colors.accentPrimary : colors.bgSubtle, color: n === gridCols ? '#FFF' : colors.textSecondary, border: `1px solid ${n === gridCols ? colors.accentPrimary : colors.borderSoft}` }}
                                                     >
                                                         {n}
                                                     </button>
@@ -748,13 +748,13 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                             </div>
                                         </div>
                                         <div>
-                                            <label className="text-[11px] text-[#666] block mb-1">{lang === 'ko' ? '세로 칸' : 'Rows'}</label>
+                                            <label style={{ fontSize: 11, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '세로 칸' : 'Rows'}</label>
                                             <div className="flex gap-1">
                                                 {[1, 2, 3, 4].map(n => (
                                                     <button
                                                         key={n}
                                                         onClick={() => setGridRows(n)}
-                                                        className={`flex-1 py-1 text-[12px] font-bold rounded ${n === gridRows ? 'bg-white/20 text-white border border-white/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                                        style={{ flex: 1, padding: '6px 4px', fontSize: 12, fontWeight: 600, borderRadius: 6, background: n === gridRows ? colors.accentPrimary : colors.bgSubtle, color: n === gridRows ? '#FFF' : colors.textSecondary, border: `1px solid ${n === gridRows ? colors.accentPrimary : colors.borderSoft}` }}
                                                     >
                                                         {n}
                                                     </button>
@@ -764,7 +764,7 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                     </div>
                                     <button
                                         onClick={handleAddGrid}
-                                        className="w-full py-1.5 text-[12px] font-medium rounded bg-white text-black hover:bg-[#e5e5e5] transition-colors"
+                                        style={{ width: '100%', padding: '10px', fontSize: 12, fontWeight: 500, borderRadius: 8, background: colors.accentPrimary, color: '#FFF' }}
                                     >
                                         + {lang === 'ko' ? '그리드 섹션 추가' : 'Add Grid Section'}
                                     </button>
@@ -773,29 +773,30 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                         </div>
 
                         {/* 퀵 트랜지션 섹션 */}
-                        <div className="bg-[#252525] rounded p-2">
+                        <div style={{ background: colors.bgSurface, borderRadius: 12, padding: 12, border: `1px solid ${colors.borderSoft}` }}>
                             <div
-                                className="flex justify-between items-center cursor-pointer hover:bg-[#2c2c2c] -mx-2 -mt-2 px-2 pt-2 pb-2 rounded-t"
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsedSections.transition ? 0 : 10 }}
                                 onClick={() => toggleSection('transition')}
                             >
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] text-[#555] transition-transform ${collapsedSections.transition ? '' : 'rotate-90'}`}>▶</span>
-                                    <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? '트랜지션 효과' : 'Transition Effects'}</span>
+                                    <span style={{ fontSize: 10, color: colors.textMuted, transition: 'transform 0.15s' }} className={collapsedSections.transition ? '' : 'rotate-90'}>▶</span>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? '트랜지션 효과' : 'Transition Effects'}</span>
                                 </div>
                                 <label className="flex items-center gap-1 cursor-pointer" onClick={(e) => e.stopPropagation()}>
                                     <input
                                         type="checkbox"
                                         checked={data.enableTransitions !== false}
                                         onChange={(e) => onUpdate({ ...data, enableTransitions: e.target.checked })}
-                                        className="w-3 h-3 rounded border-[#555] bg-[#2c2c2c] accent-white"
+                                        className="w-3 h-3 rounded"
+                                        style={{ accentColor: colors.accentPrimary }}
                                     />
-                                    <span className="text-[10px] text-[#666]">{lang === 'ko' ? '활성화' : 'Enable'}</span>
+                                    <span style={{ fontSize: 10, color: colors.textMuted }}>{lang === 'ko' ? '활성화' : 'Enable'}</span>
                                 </label>
                             </div>
                             {!collapsedSections.transition && data.enableTransitions !== false && (
                                 <div className="space-y-2">
                                     <div>
-                                        <label className="text-[11px] text-[#666] block mb-1">{lang === 'ko' ? '효과 종류' : 'Effect Type'}</label>
+                                        <label style={{ fontSize: 11, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '효과 종류' : 'Effect Type'}</label>
                                         <div className="flex gap-1">
                                             {[
                                                 { id: 'fade', label: lang === 'ko' ? '페이드' : 'Fade' },
@@ -805,7 +806,7 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                                 <button
                                                     key={effect.id}
                                                     onClick={() => onUpdate({ ...data, transitionType: effect.id })}
-                                                    className={`flex-1 py-1 text-[11px] rounded ${(data.transitionType || 'fade') === effect.id ? 'bg-white/20 text-white border border-white/50' : 'bg-[#2c2c2c] text-[#666] border border-[#3c3c3c] hover:border-[#555]'}`}
+                                                    style={{ flex: 1, padding: '6px 4px', fontSize: 11, borderRadius: 6, background: (data.transitionType || 'fade') === effect.id ? colors.accentPrimary : colors.bgSubtle, color: (data.transitionType || 'fade') === effect.id ? '#FFF' : colors.textSecondary, border: `1px solid ${colors.borderSoft}` }}
                                                 >
                                                     {effect.label}
                                                 </button>
@@ -813,7 +814,7 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="text-[11px] text-[#666] block mb-1">
+                                        <label style={{ fontSize: 11, color: colors.textMuted, display: 'block', marginBottom: 4 }}>
                                             {lang === 'ko' ? '지속 시간' : 'Duration'}: {(data.transitionDuration || 0.5).toFixed(1)}s
                                         </label>
                                         <input
@@ -824,9 +825,10 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                             value={data.transitionDuration || 0.5}
                                             onChange={(e) => onUpdate({ ...data, transitionDuration: parseFloat(e.target.value) })}
                                             className="minimal-slider"
+                                            style={{ accentColor: colors.accentPrimary }}
                                         />
                                     </div>
-                                    <p className="text-[9px] text-[#555]">
+                                    <p style={{ fontSize: 9, color: colors.textMuted }}>
                                         * {lang === 'ko' ? '섹션 간 스크롤 시 애니메이션이 적용됩니다' : 'Animation applied when scrolling between sections'}
                                     </p>
                                 </div>
@@ -834,20 +836,20 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                         </div>
 
                         {/* AI 제품 분석 섹션 */}
-                        <div className="bg-[#252525] rounded p-2">
+                        <div style={{ background: colors.bgSurface, borderRadius: 12, padding: 12, border: `1px solid ${colors.borderSoft}` }}>
                             <div
-                                className="flex justify-between items-center cursor-pointer hover:bg-[#2c2c2c] -mx-2 -mt-2 px-2 pt-2 pb-2 rounded-t"
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsedSections.aiAnalysis ? 0 : 10 }}
                                 onClick={() => toggleSection('aiAnalysis')}
                             >
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] text-[#555] transition-transform ${collapsedSections.aiAnalysis ? '' : 'rotate-90'}`}>▶</span>
-                                    <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? 'AI 제품 분석' : 'AI Product Analysis'}</span>
+                                    <span style={{ fontSize: 10, color: colors.textMuted, transition: 'transform 0.15s' }} className={collapsedSections.aiAnalysis ? '' : 'rotate-90'}>▶</span>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? 'AI 제품 분석' : 'AI Product Analysis'}</span>
                                 </div>
-                                <span className="text-[7px] text-white">✨ AI</span>
+                                <span style={{ fontSize: 9, padding: '2px 6px', background: colors.accentPrimary, color: '#FFF', borderRadius: 4 }}>✨ AI</span>
                             </div>
                             {!collapsedSections.aiAnalysis && (
-                                <div className="space-y-2 mt-2">
-                                    <p className="text-[11px] text-[#666]">
+                                <div className="space-y-2">
+                                    <p style={{ fontSize: 11, color: colors.textMuted }}>
                                         {lang === 'ko'
                                             ? '제품 사진을 분석하여 자동으로 SIZE GUIDE, A/S 안내, 주의사항을 생성합니다.'
                                             : 'Analyze product photos to auto-generate SIZE GUIDE, A/S info, and cautions.'}
@@ -1210,35 +1212,35 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                         </div>
 
                         {/* 콘텐츠 섹션 수정 */}
-                        <div className="bg-[#252525] rounded p-2">
+                        <div style={{ background: colors.bgSurface, borderRadius: 12, padding: 12, border: `1px solid ${colors.borderSoft}` }}>
                             <div
-                                className="flex justify-between items-center cursor-pointer hover:bg-[#2c2c2c] -mx-2 -mt-2 px-2 pt-2 pb-2 rounded-t"
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsedSections.sizeGuide ? 0 : 10 }}
                                 onClick={() => toggleSection('sizeGuide')}
                             >
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] text-[#555] transition-transform ${collapsedSections.sizeGuide ? '' : 'rotate-90'}`}>▶</span>
-                                    <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? 'SIZE GUIDE 수정' : 'SIZE GUIDE Edit'}</span>
+                                    <span style={{ fontSize: 10, color: colors.textMuted, transition: 'transform 0.15s' }} className={collapsedSections.sizeGuide ? '' : 'rotate-90'}>▶</span>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? 'SIZE GUIDE 수정' : 'SIZE GUIDE Edit'}</span>
                                 </div>
                             </div>
                             {!collapsedSections.sizeGuide && (
-                                <div className="space-y-2 mt-2">
+                                <div className="space-y-2">
                                     <div>
-                                        <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '기준 사이즈' : 'Base Size'}</label>
+                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '기준 사이즈' : 'Base Size'}</label>
                                         <input
                                             type="text"
                                             value={data.sizeGuideContent?.baseSize || '250'}
                                             onChange={(e) => onUpdate({ ...data, sizeGuideContent: { ...data.sizeGuideContent, baseSize: e.target.value } })}
-                                            className="w-full px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[11px] text-white"
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
                                             placeholder="250"
                                         />
                                     </div>
                                     <div className="grid grid-cols-3 gap-2">
                                         <div>
-                                            <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '사이즈' : 'Size'}</label>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '사이즈' : 'Size'}</label>
                                             <select
                                                 value={data.sizeGuideContent?.sizeLevel || 'normal'}
                                                 onChange={(e) => onUpdate({ ...data, sizeGuideContent: { ...data.sizeGuideContent, sizeLevel: e.target.value } })}
-                                                className="w-full px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[11px] text-white"
+                                                style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
                                             >
                                                 <option value="small">{lang === 'ko' ? '작음' : 'Small'}</option>
                                                 <option value="normal">{lang === 'ko' ? '보통' : 'Normal'}</option>
@@ -1246,11 +1248,11 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '발볼' : 'Width'}</label>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '발볼' : 'Width'}</label>
                                             <select
                                                 value={data.sizeGuideContent?.widthLevel || 'normal'}
                                                 onChange={(e) => onUpdate({ ...data, sizeGuideContent: { ...data.sizeGuideContent, widthLevel: e.target.value } })}
-                                                className="w-full px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[11px] text-white"
+                                                style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
                                             >
                                                 <option value="narrow">{lang === 'ko' ? '좁음' : 'Narrow'}</option>
                                                 <option value="normal">{lang === 'ko' ? '보통' : 'Normal'}</option>
@@ -1258,11 +1260,11 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '무게' : 'Weight'}</label>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '무게' : 'Weight'}</label>
                                             <select
                                                 value={data.sizeGuideContent?.weightLevel || 'normal'}
                                                 onChange={(e) => onUpdate({ ...data, sizeGuideContent: { ...data.sizeGuideContent, weightLevel: e.target.value } })}
-                                                className="w-full px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[11px] text-white"
+                                                style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
                                             >
                                                 <option value="light">{lang === 'ko' ? '가벼움' : 'Light'}</option>
                                                 <option value="normal">{lang === 'ko' ? '보통' : 'Normal'}</option>
@@ -1271,7 +1273,7 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '글꼴 크기' : 'Font Size'}: {data.sizeGuideContent?.fontSize || 14}px</label>
+                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '글꼴 크기' : 'Font Size'}: {data.sizeGuideContent?.fontSize || 14}px</label>
                                         <input
                                             type="range"
                                             min="10"
@@ -1279,6 +1281,7 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                             value={data.sizeGuideContent?.fontSize || 14}
                                             onChange={(e) => onUpdate({ ...data, sizeGuideContent: { ...data.sizeGuideContent, fontSize: parseInt(e.target.value) } })}
                                             className="minimal-slider"
+                                            style={{ accentColor: colors.accentPrimary }}
                                         />
                                     </div>
                                 </div>
@@ -1286,55 +1289,55 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                         </div>
 
                         {/* A/S 안내 수정 */}
-                        <div className="bg-[#252525] rounded p-2">
+                        <div style={{ background: colors.bgSurface, borderRadius: 12, padding: 12, border: `1px solid ${colors.borderSoft}` }}>
                             <div
-                                className="flex justify-between items-center cursor-pointer hover:bg-[#2c2c2c] -mx-2 -mt-2 px-2 pt-2 pb-2 rounded-t"
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsedSections.asInfo ? 0 : 10 }}
                                 onClick={() => toggleSection('asInfo')}
                             >
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] text-[#555] transition-transform ${collapsedSections.asInfo ? '' : 'rotate-90'}`}>▶</span>
-                                    <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? 'A/S 안내 수정' : 'A/S Info Edit'}</span>
+                                    <span style={{ fontSize: 10, color: colors.textMuted, transition: 'transform 0.15s' }} className={collapsedSections.asInfo ? '' : 'rotate-90'}>▶</span>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? 'A/S 안내 수정' : 'A/S Info Edit'}</span>
                                 </div>
                             </div>
                             {!collapsedSections.asInfo && (
-                                <div className="space-y-2 mt-2">
+                                <div className="space-y-2">
                                     <div>
-                                        <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '제목' : 'Title'}</label>
+                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '제목' : 'Title'}</label>
                                         <input
                                             type="text"
                                             value={data.asInfoContent?.title || 'A/S 안내'}
                                             onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, title: e.target.value } })}
-                                            className="w-full px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[11px] text-white"
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '고객센터 번호' : 'Contact Number'}</label>
+                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '고객센터 번호' : 'Contact Number'}</label>
                                         <input
                                             type="text"
                                             value={data.asInfoContent?.phone || '000-0000-0000'}
                                             onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, phone: e.target.value } })}
-                                            className="w-full px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[11px] text-white"
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '안내 사항 1' : 'Info 1'}</label>
+                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '안내 사항 1' : 'Info 1'}</label>
                                         <textarea
                                             value={data.asInfoContent?.info1 || '제품 상태 확인 후 정확한 안내가 가능합니다.\n사진/영상 자료와 함께 문의해 주세요.'}
                                             onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, info1: e.target.value } })}
-                                            className="w-full px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[11px] text-white min-h-[50px]"
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary, minHeight: 50, resize: 'vertical' }}
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '주의사항 (빨간색)' : 'Cautions (Red)'}</label>
+                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '주의사항 (빨간색)' : 'Cautions (Red)'}</label>
                                         <textarea
                                             value={data.asInfoContent?.cautions || '가죽 특성상 개체별 색감 차이가 있을 수 있습니다.\n사이즈 확인 시 제품 하자 발생 시 교환/환불이 불가합니다.'}
                                             onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, cautions: e.target.value } })}
-                                            className="w-full px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[11px] text-white min-h-[50px]"
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary, minHeight: 50, resize: 'vertical' }}
                                         />
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
-                                            <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '글꼴 크기' : 'Font'}: {data.asInfoContent?.fontSize || 14}px</label>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '글꼴 크기' : 'Font'}: {data.asInfoContent?.fontSize || 14}px</label>
                                             <input
                                                 type="range"
                                                 min="10"
@@ -1342,10 +1345,11 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                                 value={data.asInfoContent?.fontSize || 14}
                                                 onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, fontSize: parseInt(e.target.value) } })}
                                                 className="minimal-slider"
+                                                style={{ accentColor: colors.accentPrimary }}
                                             />
                                         </div>
                                         <div>
-                                            <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '너비' : 'Width'}: {data.asInfoContent?.width || 100}%</label>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '너비' : 'Width'}: {data.asInfoContent?.width || 100}%</label>
                                             <input
                                                 type="range"
                                                 min="50"
@@ -1353,6 +1357,7 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                                 value={data.asInfoContent?.width || 100}
                                                 onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, width: parseInt(e.target.value) } })}
                                                 className="minimal-slider"
+                                                style={{ accentColor: colors.accentPrimary }}
                                             />
                                         </div>
                                     </div>
@@ -1361,25 +1366,25 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                         </div>
 
                         {/* 기타 주의사항 수정 */}
-                        <div className="bg-[#252525] rounded p-2">
+                        <div style={{ background: colors.bgSurface, borderRadius: 12, padding: 12, border: `1px solid ${colors.borderSoft}` }}>
                             <div
-                                className="flex justify-between items-center cursor-pointer hover:bg-[#2c2c2c] -mx-2 -mt-2 px-2 pt-2 pb-2 rounded-t"
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsedSections.precautions ? 0 : 10 }}
                                 onClick={() => toggleSection('precautions')}
                             >
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] text-[#555] transition-transform ${collapsedSections.precautions ? '' : 'rotate-90'}`}>▶</span>
-                                    <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? '기타 주의사항 수정' : 'Precautions Edit'}</span>
+                                    <span style={{ fontSize: 10, color: colors.textMuted, transition: 'transform 0.15s' }} className={collapsedSections.precautions ? '' : 'rotate-90'}>▶</span>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? '기타 주의사항 수정' : 'Precautions Edit'}</span>
                                 </div>
                             </div>
                             {!collapsedSections.precautions && (
-                                <div className="space-y-2 mt-2">
+                                <div className="space-y-2">
                                     <div>
-                                        <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '제목' : 'Title'}</label>
+                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '제목' : 'Title'}</label>
                                         <input
                                             type="text"
                                             value={data.precautionsContent?.title || '기타 주의 사항'}
                                             onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, title: e.target.value } })}
-                                            className="w-full px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[11px] text-white"
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
                                         />
                                     </div>
                                     {[1, 2, 3, 4].map((idx) => (
@@ -1388,21 +1393,21 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                                 type="text"
                                                 value={data.precautionsContent?.[`item${idx}Title`] || ['습기 주의', '직사광선 주의', '보관 방법', '오염 관리'][idx - 1]}
                                                 onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, [`item${idx}Title`]: e.target.value } })}
-                                                className="px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[10px] text-white"
+                                                style={{ padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 10, color: colors.textPrimary }}
                                                 placeholder={`항목 ${idx}`}
                                             />
                                             <input
                                                 type="text"
                                                 value={data.precautionsContent?.[`item${idx}Desc`] || ['가죽 제품은 습기에 약해 변색이나 얼룩이 생길 수 있습니다.', '직사광선에 장시간 노출 시 가죽 변색 우려가 있습니다.', '통기성 좋은 천 커버를 사용해 주세요.', '가죽 전용 클리너를 이용해 주세요.'][idx - 1]}
                                                 onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, [`item${idx}Desc`]: e.target.value } })}
-                                                className="px-2 py-1 bg-[#2c2c2c] border border-[#3c3c3c] rounded text-[10px] text-white"
+                                                style={{ padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 10, color: colors.textPrimary }}
                                                 placeholder={`설명 ${idx}`}
                                             />
                                         </div>
                                     ))}
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
-                                            <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '글꼴 크기' : 'Font'}: {data.precautionsContent?.fontSize || 14}px</label>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '글꼴 크기' : 'Font'}: {data.precautionsContent?.fontSize || 14}px</label>
                                             <input
                                                 type="range"
                                                 min="10"
@@ -1410,10 +1415,11 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                                 value={data.precautionsContent?.fontSize || 14}
                                                 onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, fontSize: parseInt(e.target.value) } })}
                                                 className="minimal-slider"
+                                                style={{ accentColor: colors.accentPrimary }}
                                             />
                                         </div>
                                         <div>
-                                            <label className="text-[10px] text-[#666] block mb-1">{lang === 'ko' ? '너비' : 'Width'}: {data.precautionsContent?.width || 100}%</label>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '너비' : 'Width'}: {data.precautionsContent?.width || 100}%</label>
                                             <input
                                                 type="range"
                                                 min="50"
@@ -1421,6 +1427,7 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                                 value={data.precautionsContent?.width || 100}
                                                 onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, width: parseInt(e.target.value) } })}
                                                 className="minimal-slider"
+                                                style={{ accentColor: colors.accentPrimary }}
                                             />
                                         </div>
                                     </div>

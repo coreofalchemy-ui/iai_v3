@@ -1,20 +1,12 @@
 import React, { useState, useRef } from 'react';
 
-interface ShoeUploadModalProps {
-    visible: boolean;
-    onClose: () => void;
-    onGenerate: (shoes: File[]) => void;
-    onGenerateWithoutShoes: () => void;
-}
+const colors = { bgBase: '#F5F5F7', bgSurface: '#FFFFFF', bgSubtle: '#F0F0F4', borderSoft: '#E2E2E8', textPrimary: '#111111', textSecondary: '#6E6E73', textMuted: '#A1A1AA', accentPrimary: '#111111' };
+
+interface ShoeUploadModalProps { visible: boolean; onClose: () => void; onGenerate: (shoes: File[]) => void; onGenerateWithoutShoes: () => void; }
 
 const MAX_SHOES = 10;
 
-export default function ShoeUploadModal({
-    visible,
-    onClose,
-    onGenerate,
-    onGenerateWithoutShoes
-}: ShoeUploadModalProps) {
+export default function ShoeUploadModal({ visible, onClose, onGenerate, onGenerateWithoutShoes }: ShoeUploadModalProps) {
     const [uploadedShoes, setUploadedShoes] = useState<{ file: File; preview: string }[]>([]);
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -23,176 +15,74 @@ export default function ShoeUploadModal({
 
     const handleFileSelect = (files: FileList | null) => {
         if (!files) return;
-
         const remaining = MAX_SHOES - uploadedShoes.length;
         const newFiles = Array.from(files).slice(0, remaining);
-
-        const newShoes = newFiles.map(file => ({
-            file,
-            preview: URL.createObjectURL(file)
-        }));
-
-        setUploadedShoes(prev => [...prev, ...newShoes]);
+        setUploadedShoes(prev => [...prev, ...newFiles.map(file => ({ file, preview: URL.createObjectURL(file) }))]);
     };
 
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-        handleFileSelect(e.dataTransfer.files);
-    };
-
-    const handleDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(true);
-    };
-
-    const handleDragLeave = () => {
-        setIsDragging(false);
-    };
+    const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); handleFileSelect(e.dataTransfer.files); };
+    const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+    const handleDragLeave = () => setIsDragging(false);
 
     const removeShoe = (index: number) => {
-        setUploadedShoes(prev => {
-            const newShoes = [...prev];
-            URL.revokeObjectURL(newShoes[index].preview);
-            newShoes.splice(index, 1);
-            return newShoes;
-        });
-    };
-
-    const handleGenerate = () => {
-        onGenerate(uploadedShoes.map(s => s.file));
+        setUploadedShoes(prev => { const n = [...prev]; URL.revokeObjectURL(n[index].preview); n.splice(index, 1); return n; });
     };
 
     return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <div
-                className="absolute inset-0 bg-black/80"
-                onClick={onClose}
-            />
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ fontFamily: "-apple-system, sans-serif" }}>
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
-            {/* Modal - Large Size */}
-            <div className="relative bg-[#f2f0e9] border-4 border-black shadow-[16px_16px_0px_0px_rgba(0,0,0,1)] w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div style={{ background: colors.bgSurface, borderRadius: 20, boxShadow: '0 25px 60px rgba(0,0,0,0.15)' }} className="relative w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
                 {/* Header */}
-                <div className="bg-black p-6 flex justify-between items-center">
+                <div style={{ borderBottom: `1px solid ${colors.borderSoft}` }} className="p-6 flex justify-between items-center">
                     <div>
-                        <h2 className="text-4xl md:text-5xl font-bold text-white uppercase tracking-tight" style={{ fontFamily: 'Oswald, sans-serif' }}>
-                            UPLOAD SHOES
-                        </h2>
-                        <p className="text-white/60 text-sm mt-1 uppercase tracking-widest" style={{ fontFamily: 'Courier Prime, monospace' }}>
-                            MAX {MAX_SHOES} IMAGES
-                        </p>
+                        <h2 style={{ fontSize: 28, fontWeight: 600, color: colors.textPrimary, letterSpacing: '-0.02em' }}>Style Transfer</h2>
+                        <p style={{ fontSize: 13, color: colors.textMuted }} className="mt-1">신발 이미지를 업로드하세요 (최대 {MAX_SHOES}장)</p>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="w-12 h-12 border-2 border-white text-white flex items-center justify-center text-2xl font-bold hover:bg-[#d00000] hover:border-[#d00000] transition-colors"
-                    >
-                        ×
-                    </button>
+                    <button onClick={onClose} style={{ width: 36, height: 36, background: colors.bgSubtle, borderRadius: 18, color: colors.textSecondary, fontSize: 20 }} className="flex items-center justify-center hover:bg-gray-200">×</button>
                 </div>
 
                 {/* Content */}
-                <div className="flex-grow overflow-y-auto p-6 md:p-8">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* Drop Zone - Left Side */}
-                        <div
-                            onClick={() => fileInputRef.current?.click()}
-                            onDrop={handleDrop}
-                            onDragOver={handleDragOver}
-                            onDragLeave={handleDragLeave}
-                            className={`
-                                min-h-[350px] border-4 cursor-pointer transition-all flex flex-col items-center justify-center
-                                ${isDragging
-                                    ? 'border-[#d00000] bg-red-50 scale-[1.01]'
-                                    : 'border-dashed border-black/40 bg-white hover:border-black hover:bg-gray-50'
-                                }
-                                ${uploadedShoes.length >= MAX_SHOES ? 'opacity-50 pointer-events-none' : ''}
-                            `}
-                        >
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                onChange={(e) => handleFileSelect(e.target.files)}
-                                className="hidden"
-                            />
-
-                            {/* Upload Icon */}
-                            <div className="w-20 h-20 border-4 border-black mb-6 flex items-center justify-center bg-white">
-                                <svg className="w-10 h-10 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                <div className="flex-grow overflow-y-auto p-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Drop Zone */}
+                        <div onClick={() => fileInputRef.current?.click()} onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}
+                            style={{ border: `2px dashed ${isDragging ? colors.accentPrimary : colors.borderSoft}`, borderRadius: 16, background: isDragging ? colors.bgSubtle : colors.bgSurface, minHeight: 280 }}
+                            className={`flex flex-col items-center justify-center cursor-pointer transition-all hover:border-gray-400 ${uploadedShoes.length >= MAX_SHOES ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={(e) => handleFileSelect(e.target.files)} className="hidden" />
+                            <div style={{ width: 80, height: 80, background: colors.bgSubtle, borderRadius: 24 }} className="flex items-center justify-center mb-4">
+                                <svg className="w-8 h-8" style={{ color: colors.textSecondary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                                 </svg>
                             </div>
-
-                            <p className="text-2xl font-bold uppercase tracking-wider text-center" style={{ fontFamily: 'Oswald, sans-serif' }}>
-                                {uploadedShoes.length >= MAX_SHOES
-                                    ? 'MAXIMUM REACHED'
-                                    : 'DROP FILES HERE'
-                                }
-                            </p>
-                            <p className="text-sm text-black/50 mt-2 uppercase tracking-widest" style={{ fontFamily: 'Courier Prime, monospace' }}>
-                                OR CLICK TO BROWSE
-                            </p>
-
-                            {/* Progress indicator */}
-                            <div className="mt-6 flex items-center gap-2">
+                            <p style={{ fontSize: 18, fontWeight: 600, color: colors.textPrimary }}>{uploadedShoes.length >= MAX_SHOES ? '최대 개수 도달' : '파일을 드롭하세요'}</p>
+                            <p style={{ fontSize: 13, color: colors.textMuted }} className="mt-1">또는 클릭하여 선택</p>
+                            <div className="mt-4 flex items-center gap-1">
                                 {Array.from({ length: MAX_SHOES }).map((_, i) => (
-                                    <div
-                                        key={i}
-                                        className={`w-3 h-3 border border-black transition-colors ${i < uploadedShoes.length ? 'bg-[#d00000]' : 'bg-white'
-                                            }`}
-                                    />
+                                    <div key={i} style={{ width: 8, height: 8, borderRadius: 4, background: i < uploadedShoes.length ? colors.accentPrimary : colors.borderSoft }} />
                                 ))}
                             </div>
-                            <p className="text-xs text-black/40 mt-2 uppercase" style={{ fontFamily: 'Courier Prime, monospace' }}>
-                                {uploadedShoes.length} / {MAX_SHOES}
-                            </p>
+                            <p style={{ fontSize: 11, color: colors.textMuted }} className="mt-2">{uploadedShoes.length} / {MAX_SHOES}</p>
                         </div>
 
-                        {/* Uploaded Shoes Grid - Right Side */}
-                        <div className="min-h-[350px] bg-black/5 border-2 border-black p-4">
-                            <div className="flex justify-between items-center mb-4 pb-3 border-b-2 border-black">
-                                <h3 className="text-xl font-bold uppercase tracking-wider" style={{ fontFamily: 'Oswald, sans-serif' }}>
-                                    UPLOADED
-                                </h3>
-                                {uploadedShoes.length > 0 && (
-                                    <span className="bg-[#d00000] text-white text-sm px-3 py-1 font-bold uppercase" style={{ fontFamily: 'Courier Prime, monospace' }}>
-                                        {uploadedShoes.length} ITEMS
-                                    </span>
-                                )}
+                        {/* Uploaded Grid */}
+                        <div style={{ background: colors.bgSubtle, borderRadius: 16, minHeight: 280 }} className="p-4">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 style={{ fontSize: 13, fontWeight: 600, color: colors.textSecondary, letterSpacing: '0.06em' }} className="uppercase">업로드됨</h3>
+                                {uploadedShoes.length > 0 && <span style={{ fontSize: 11, background: colors.accentPrimary, color: '#FFF', padding: '2px 8px', borderRadius: 10 }}>{uploadedShoes.length}장</span>}
                             </div>
-
                             {uploadedShoes.length === 0 ? (
-                                <div className="h-[280px] flex flex-col items-center justify-center text-black/30">
-                                    <div className="w-16 h-16 border-2 border-dashed border-black/30 mb-4 flex items-center justify-center">
-                                        <span className="text-3xl">×</span>
-                                    </div>
-                                    <p className="text-sm uppercase tracking-widest" style={{ fontFamily: 'Courier Prime, monospace' }}>
-                                        NO ITEMS YET
-                                    </p>
+                                <div className="h-[200px] flex flex-col items-center justify-center">
+                                    <span style={{ fontSize: 32, color: colors.textMuted }}>👟</span>
+                                    <p style={{ fontSize: 12, color: colors.textMuted }} className="mt-2">아직 없음</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                                     {uploadedShoes.map((shoe, idx) => (
-                                        <div
-                                            key={idx}
-                                            className="relative group aspect-square border-2 border-black bg-white overflow-hidden shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-[6px_6px_0px_0px_rgba(208,0,0,1)] transition-all"
-                                        >
-                                            <img
-                                                src={shoe.preview}
-                                                alt={`Shoe ${idx + 1}`}
-                                                className="w-full h-full object-cover"
-                                            />
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); removeShoe(idx); }}
-                                                className="absolute top-0 right-0 w-7 h-7 bg-black text-white text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center hover:bg-[#d00000]"
-                                            >
-                                                ×
-                                            </button>
-                                            <div className="absolute bottom-0 left-0 right-0 bg-black text-white text-[10px] text-center py-1 uppercase" style={{ fontFamily: 'Courier Prime, monospace' }}>
-                                                SHOE_{String(idx + 1).padStart(2, '0')}
-                                            </div>
+                                        <div key={idx} style={{ border: `1px solid ${colors.borderSoft}`, borderRadius: 12 }} className="relative group aspect-square overflow-hidden bg-white">
+                                            <img src={shoe.preview} alt="" className="w-full h-full object-cover" />
+                                            <button onClick={(e) => { e.stopPropagation(); removeShoe(idx); }}
+                                                style={{ background: '#FF3B30' }} className="absolute top-1 right-1 w-5 h-5 text-white text-xs rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center">×</button>
                                         </div>
                                     ))}
                                 </div>
@@ -201,28 +91,13 @@ export default function ShoeUploadModal({
                     </div>
                 </div>
 
-                {/* Footer Actions */}
-                <div className="border-t-4 border-black bg-white p-6 flex flex-col sm:flex-row gap-4">
-                    <button
-                        onClick={onGenerateWithoutShoes}
-                        className="flex-1 px-8 py-4 border-4 border-black bg-white text-black font-bold uppercase tracking-wider hover:bg-gray-100 transition-colors shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[-3px] hover:translate-y-[-3px] hover:shadow-[9px_9px_0px_0px_rgba(0,0,0,1)]"
-                        style={{ fontFamily: 'Oswald, sans-serif' }}
-                    >
-                        SKIP & GENERATE
-                    </button>
-                    <button
-                        onClick={handleGenerate}
-                        disabled={uploadedShoes.length === 0}
-                        className={`
-                            flex-1 px-8 py-4 border-4 font-bold uppercase tracking-wider transition-all
-                            ${uploadedShoes.length > 0
-                                ? 'border-[#d00000] bg-[#d00000] text-white hover:bg-black hover:border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[-3px] hover:translate-y-[-3px] hover:shadow-[9px_9px_0px_0px_rgba(208,0,0,1)]'
-                                : 'border-gray-300 bg-gray-200 text-gray-400 cursor-not-allowed'
-                            }
-                        `}
-                        style={{ fontFamily: 'Oswald, sans-serif' }}
-                    >
-                        GENERATE WITH {uploadedShoes.length} SHOES
+                {/* Footer */}
+                <div style={{ borderTop: `1px solid ${colors.borderSoft}` }} className="p-6 flex gap-3">
+                    <button onClick={onGenerateWithoutShoes} style={{ flex: 1, padding: '14px 24px', background: 'transparent', border: `1px solid ${colors.borderSoft}`, borderRadius: 12, fontSize: 14, fontWeight: 500, color: colors.textPrimary }} className="hover:bg-gray-50">건너뛰기</button>
+                    <button onClick={() => onGenerate(uploadedShoes.map(s => s.file))} disabled={uploadedShoes.length === 0}
+                        style={{ flex: 1, padding: '14px 24px', background: uploadedShoes.length > 0 ? colors.accentPrimary : colors.borderSoft, color: uploadedShoes.length > 0 ? '#FFF' : colors.textMuted, borderRadius: 12, fontSize: 14, fontWeight: 500 }}
+                        className="disabled:cursor-not-allowed">
+                        {uploadedShoes.length}장으로 생성
                     </button>
                 </div>
             </div>

@@ -49,8 +49,8 @@ const TOOLS_ROW_2: ToolConfig[] = [
 ];
 
 const TOOLS_ROW_3: ToolConfig[] = [
-    { id: ToolType.SketchToImage, title: 'Sketch-to-Image', description: 'Turn your rough concepts into high-quality renders.', actionText: 'Convert Sketch', image: TOOL_IMAGES[ToolType.SketchToImage] },
-    { id: ToolType.OutfitRec, title: 'Model Generator', description: 'Generate faces, swap outfits, and change poses.', actionText: 'Generate Model', image: TOOL_IMAGES[ToolType.OutfitRec] },
+    { id: ToolType.SketchToImage, title: 'Model Styler', description: 'Turn your rough concepts into high-quality renders.', actionText: 'Convert Sketch', image: TOOL_IMAGES[ToolType.SketchToImage] },
+    { id: ToolType.OutfitRec, title: 'Shoe Studio', description: 'Generate shoes, swap outfits, and change styles.', actionText: 'Design Shoes', image: TOOL_IMAGES[ToolType.OutfitRec] },
     { id: ToolType.PatternCreation, title: 'Custom Pattern Creation', description: 'Design bespoke motifs and prints with intuitive tools.', actionText: 'Create Pattern', image: TOOL_IMAGES[ToolType.PatternCreation] }
 ];
 
@@ -166,7 +166,7 @@ const PortfolioSection = () => (
             <Squiggle className="absolute top-1/2 right-1/4 w-64 h-24 text-white opacity-40 -translate-y-1/2" />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 border-b-4 border-black bg-black">
-            {["https://images.unsplash.com/photo-1539109136881-3be0616acf4b", "https://images.unsplash.com/photo-1500917293891-ef795e70e1f6", "https://images.unsplash.com/photo-1581044777550-4cfa60707c03", "https://images.unsplash.com/photo-1529139574466-a302d2753cd4", "https://images.unsplash.com/photo-1578632292335-df3abbb0d586", "https://images.unsplash.com/photo-1534528741775-53994a69daeb"].map((img, i) => (
+            {["https://images.unsplash.com/photo-1539109136881-3be0616acf4b", "https://images.unsplash.com/photo-1500917293891-ef795e70e1f6", "https://images.unsplash.com/photo-1581044777550-4cfa60707c03", "/ref_004.png", "https://images.unsplash.com/photo-1578632292335-df3abbb0d586", "https://images.unsplash.com/photo-1534528741775-53994a69daeb"].map((img, i) => (
                 <div key={i} className="relative group border-r border-white/20 last:border-r-0 aspect-[2/3] overflow-hidden cursor-crosshair">
                     <img src={`${img}?auto=format&fit=crop&w=400&q=80&v=4`} alt="Portfolio" className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-all grayscale group-hover:grayscale-0 duration-500" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = FALLBACK_IMAGES['default']; }} />
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 duration-200 pointer-events-none bg-black/20"><RedX className="w-24 h-24" /></div>
@@ -255,7 +255,9 @@ export default function LandingPage() {
         } else if (toolId === ToolType.OutfitRec) {
             navigate('/model-generator');
         } else if (toolId === ToolType.VirtualTryOn) {
-            navigate('/gemini-chat'); // Gemini Chat for now
+            navigate('/gemini-chat');
+        } else if (toolId === ToolType.PatternCreation) {
+            navigate('/pattern-creator');
         } else {
             handleNavigateToApp();
         }
