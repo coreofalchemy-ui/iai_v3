@@ -7,6 +7,7 @@ import ProductEnhancementPanel from './ProductEnhancementPanel';
 import ContentGeneratorPanel from './ContentGeneratorPanel';
 import { TextElement } from './PreviewRenderer';
 import { FieldToggleControl } from './FieldToggleControl';
+import { FilterPresetName } from '../services/photoFilterService';
 
 // 선 요소 타입
 export interface LineElement {
@@ -45,6 +46,12 @@ interface AdjustmentPanelProps {
     onAddLineElement?: (line: LineElement) => void;
     onDeleteLineElement?: (id: string) => void;
     onAddGridSection?: (grid: GridSection) => void;
+    heldSections?: Set<string>;
+    activeFilter?: FilterPresetName;
+    onFilterChange?: (filter: FilterPresetName) => void;
+    sectionHeights?: { [key: string]: number };
+    onUpdateHeights?: (key: string, height: number) => void;
+    onSetActiveSection?: (section: string) => void;
 }
 
 type Section = 'hero' | 'products' | 'models' | 'contents' | 'closeup';
@@ -156,7 +163,7 @@ const SliderStyles = () => (
     `}</style>
 );
 
-export default function AdjustmentPanel({ data, onUpdate, activeSection: previewActiveSection, textElements = [], onAddTextElement, onUpdateTextElement, onDeleteTextElement, onAddSectionWithImage, lineElements = [], onAddLineElement, onDeleteLineElement, onAddGridSection }: AdjustmentPanelProps) {
+export default function AdjustmentPanel({ data, onUpdate, activeSection: previewActiveSection, textElements = [], onAddTextElement, onUpdateTextElement, onDeleteTextElement, onAddSectionWithImage, lineElements = [], onAddLineElement, onDeleteLineElement, onAddGridSection, heldSections, activeFilter, onFilterChange }: AdjustmentPanelProps) {
     const [activeSection, setActiveSection] = useState<Section>('hero');
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
     const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
@@ -247,7 +254,24 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
             if (!productFile) { alert('제품 이미지가 없습니다.'); return; }
             const productImage = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = (e) => resolve(e.target?.result as string); reader.onerror = reject; reader.readAsDataURL(productFile); });
             const aiCopy = await generateAICopywriting(productImage);
-            onUpdate({ ...data, heroTextContent: { ...data.heroTextContent, ...aiCopy } });
+
+            // Auto-add detail sections if they don't exist
+            const sectionsToAdd = ['size-guide', 'as-info', 'precautions'];
+            let newSectionOrder = [...(data.sectionOrder || [])];
+            let orderChanged = false;
+
+            sectionsToAdd.forEach(section => {
+                if (!newSectionOrder.includes(section)) {
+                    newSectionOrder.push(section);
+                    orderChanged = true;
+                }
+            });
+
+            onUpdate({
+                ...data,
+                heroTextContent: { ...data.heroTextContent, ...aiCopy },
+                sectionOrder: orderChanged ? newSectionOrder : data.sectionOrder
+            });
         } catch (error) { console.error('AI 분석 실패:', error); alert('AI 분석에 실패했습니다.'); }
         finally { setIsGeneratingAI(false); }
     };
@@ -259,14 +283,26 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
         setProductDragActive(false);
         const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
         if (files.length > 0) {
-            const newFiles = [...productFiles, ...files].slice(0, 10);
+            // Filter duplicates by name and size
+            const uniqueFiles = files.filter(newFile =>
+                !productFiles.some((existingFile: File) =>
+                    existingFile.name === newFile.name && existingFile.size === newFile.size
+                )
+            );
+            const newFiles = [...productFiles, ...uniqueFiles].slice(0, 10);
             onUpdate({ ...data, productFiles: newFiles });
         }
     };
     const handleProductFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
         if (files.length > 0) {
-            const newFiles = [...productFiles, ...files].slice(0, 10);
+            // Filter duplicates by name and size
+            const uniqueFiles = files.filter(newFile =>
+                !productFiles.some((existingFile: File) =>
+                    existingFile.name === newFile.name && existingFile.size === newFile.size
+                )
+            );
+            const newFiles = [...productFiles, ...uniqueFiles].slice(0, 10);
             onUpdate({ ...data, productFiles: newFiles });
         }
     };
@@ -364,12 +400,12 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
             return (
                 <FieldToggleControl key={id} fieldId={id} label={displayLabel} isVisible={isVisible} onToggleVisibility={() => updateFieldSetting(id, 'visible', !isVisible)} fontSize={fontSize} onFontSizeChange={(size: number) => updateFieldSetting(id, 'fontSize', size)} draggable onDragStart={handleDragStart(id)} onDragOver={handleDragOver} onDrop={handleDrop(id)}>
                     <div className="grid grid-cols-2 gap-2">
-                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '컬러' : 'Color'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white focus:border-white focus:outline-none" value={data.heroTextContent?.specColor || ''} onChange={(e) => updateHeroContent('specColor', e.target.value)} /></div>
-                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '갑피' : 'Upper'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white focus:border-white focus:outline-none" value={data.heroTextContent?.specUpper || ''} onChange={(e) => updateHeroContent('specUpper', e.target.value)} /></div>
-                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '안감' : 'Lining'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white focus:border-white focus:outline-none" value={data.heroTextContent?.specLining || ''} onChange={(e) => updateHeroContent('specLining', e.target.value)} /></div>
-                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '밑창' : 'Outsole'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white focus:border-white focus:outline-none" value={data.heroTextContent?.specOutsole || ''} onChange={(e) => updateHeroContent('specOutsole', e.target.value)} /></div>
-                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '원산지' : 'Origin'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white focus:border-white focus:outline-none" value={data.heroTextContent?.specOrigin || ''} onChange={(e) => updateHeroContent('specOrigin', e.target.value)} /></div>
-                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '굽높이' : 'Heel'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white focus:border-white focus:outline-none" value={data.heroTextContent?.heelHeight || ''} onChange={(e) => updateHeroContent('heelHeight', e.target.value)} /></div>
+                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '컬러' : 'Color'}</label><input className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] focus:border-[#111] focus:outline-none" value={data.heroTextContent?.specColor || ''} onChange={(e) => updateHeroContent('specColor', e.target.value)} /></div>
+                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '갑피' : 'Upper'}</label><input className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] focus:border-[#111] focus:outline-none" value={data.heroTextContent?.specUpper || ''} onChange={(e) => updateHeroContent('specUpper', e.target.value)} /></div>
+                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '안감' : 'Lining'}</label><input className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] focus:border-[#111] focus:outline-none" value={data.heroTextContent?.specLining || ''} onChange={(e) => updateHeroContent('specLining', e.target.value)} /></div>
+                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '밑창' : 'Outsole'}</label><input className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] focus:border-[#111] focus:outline-none" value={data.heroTextContent?.specOutsole || ''} onChange={(e) => updateHeroContent('specOutsole', e.target.value)} /></div>
+                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '원산지' : 'Origin'}</label><input className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] focus:border-[#111] focus:outline-none" value={data.heroTextContent?.specOrigin || ''} onChange={(e) => updateHeroContent('specOrigin', e.target.value)} /></div>
+                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '굽높이' : 'Heel'}</label><input className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] focus:border-[#111] focus:outline-none" value={data.heroTextContent?.heelHeight || ''} onChange={(e) => updateHeroContent('heelHeight', e.target.value)} /></div>
                     </div>
                 </FieldToggleControl>
             );
@@ -378,17 +414,17 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
             return (
                 <FieldToggleControl key={id} fieldId={id} label={displayLabel} isVisible={isVisible} onToggleVisibility={() => updateFieldSetting(id, 'visible', !isVisible)} fontSize={fontSize} onFontSizeChange={(size: number) => updateFieldSetting(id, 'fontSize', size)} draggable onDragStart={handleDragStart(id)} onDragOver={handleDragOver} onDrop={handleDrop(id)}>
                     <div className="grid grid-cols-3 gap-2">
-                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '아웃솔' : 'Outsole'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white focus:border-white focus:outline-none" value={data.heroTextContent?.outsole || ''} onChange={(e) => updateHeroContent('outsole', e.target.value)} placeholder="3cm" /></div>
-                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '인솔' : 'Insole'}</label><input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white focus:border-white focus:outline-none" value={data.heroTextContent?.insole || ''} onChange={(e) => updateHeroContent('insole', e.target.value)} placeholder="1.5cm" /></div>
-                        <div><label className="text-[12px] text-white mb-0.5 block font-medium">{lang === 'ko' ? '총 높이' : 'Total'}</label><input className="w-full bg-white/10 border border-white/50 rounded px-2 py-1 text-[11px] text-white font-medium focus:border-white focus:outline-none" value={data.heroTextContent?.totalHeight || ''} onChange={(e) => updateHeroContent('totalHeight', e.target.value)} placeholder="4.5cm" /></div>
+                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '아웃솔' : 'Outsole'}</label><input className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] focus:border-[#111] focus:outline-none" value={data.heroTextContent?.outsole || ''} onChange={(e) => updateHeroContent('outsole', e.target.value)} placeholder="3cm" /></div>
+                        <div><label className="text-[12px] text-[#666] mb-0.5 block">{lang === 'ko' ? '인솔' : 'Insole'}</label><input className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] focus:border-[#111] focus:outline-none" value={data.heroTextContent?.insole || ''} onChange={(e) => updateHeroContent('insole', e.target.value)} placeholder="1.5cm" /></div>
+                        <div><label className="text-[12px] text-[#111] mb-0.5 block font-medium">{lang === 'ko' ? '총 높이' : 'Total'}</label><input className="w-full bg-[#FFF] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] font-medium focus:border-[#111] focus:outline-none" value={data.heroTextContent?.totalHeight || ''} onChange={(e) => updateHeroContent('totalHeight', e.target.value)} placeholder="4.5cm" /></div>
                     </div>
                 </FieldToggleControl>
             );
         }
         return (
             <FieldToggleControl key={id} fieldId={id} label={displayLabel} isVisible={isVisible} onToggleVisibility={() => updateFieldSetting(id, 'visible', !isVisible)} fontSize={fontSize} onFontSizeChange={(size: number) => updateFieldSetting(id, 'fontSize', size)} draggable onDragStart={handleDragStart(id)} onDragOver={handleDragOver} onDrop={handleDrop(id)}>
-                {multiline ? <textarea rows={2} className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white resize-none focus:border-white focus:outline-none" value={data.heroTextContent?.[id] || ''} onChange={(e) => updateHeroContent(id, e.target.value)} />
-                    : <input className="w-full bg-[#2c2c2c] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white focus:border-white focus:outline-none" value={data.heroTextContent?.[id] || ''} onChange={(e) => updateHeroContent(id, e.target.value)} />}
+                {multiline ? <textarea rows={2} className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] resize-none focus:border-[#111] focus:outline-none" value={data.heroTextContent?.[id] || ''} onChange={(e) => updateHeroContent(id, e.target.value)} />
+                    : <input className="w-full bg-[#F0F0F4] border border-[#E2E2E8] rounded px-2 py-1 text-[11px] text-[#111] focus:border-[#111] focus:outline-none" value={data.heroTextContent?.[id] || ''} onChange={(e) => updateHeroContent(id, e.target.value)} />}
             </FieldToggleControl>
         );
     };
@@ -438,9 +474,41 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                     <div className="space-y-1.5">
                         <div className="flex justify-between items-center mb-2">
                             <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? '히어로 섹션' : 'Hero Section'}</span>
-                            <button onClick={handleAIAnalysis} disabled={isGeneratingAI} className={`px-1.5 py-0.5 text-[11px] font-medium rounded transition-colors ${isGeneratingAI ? 'bg-[#3c3c3c] text-[#666]' : 'bg-white text-black hover:bg-[#e5e5e5]'}`}>
+                            <button onClick={handleAIAnalysis} disabled={isGeneratingAI} className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${isGeneratingAI ? 'bg-gray-100 text-gray-400' : 'bg-[#111] text-white hover:bg-black'}`}>
                                 {isGeneratingAI ? 'Analyzing...' : 'AI'}
                             </button>
+                        </div>
+                        {/* 서체 선택 */}
+                        <div style={{ background: colors.bgSurface, borderRadius: 10, padding: 10, border: `1px solid ${colors.borderSoft}`, marginBottom: 8 }}>
+                            <div className="flex items-center justify-between">
+                                <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? '서체' : 'Font'}</span>
+                                <select
+                                    value={data.heroFontFamily || 'Noto Sans KR'}
+                                    onChange={(e) => onUpdate({ ...data, heroFontFamily: e.target.value })}
+                                    style={{
+                                        fontSize: 11,
+                                        padding: '4px 8px',
+                                        borderRadius: 6,
+                                        border: `1px solid ${colors.borderSoft}`,
+                                        background: colors.bgSubtle,
+                                        color: colors.textPrimary,
+                                        fontFamily: data.heroFontFamily || 'Noto Sans KR',
+                                        minWidth: 140,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value="Noto Sans KR" style={{ fontFamily: 'Noto Sans KR' }}>Noto Sans KR</option>
+                                    <option value="Noto Serif KR" style={{ fontFamily: 'Noto Serif KR' }}>Noto Serif KR</option>
+                                    <option value="Pretendard" style={{ fontFamily: 'Pretendard' }}>Pretendard</option>
+                                    <option value="Spoqa Han Sans Neo" style={{ fontFamily: 'Spoqa Han Sans Neo' }}>Spoqa Han Sans</option>
+                                    <option value="Roboto" style={{ fontFamily: 'Roboto' }}>Roboto</option>
+                                    <option value="Poppins" style={{ fontFamily: 'Poppins' }}>Poppins</option>
+                                    <option value="Playfair Display" style={{ fontFamily: 'Playfair Display' }}>Playfair Display</option>
+                                    <option value="Montserrat" style={{ fontFamily: 'Montserrat' }}>Montserrat</option>
+                                    <option value="Inter" style={{ fontFamily: 'Inter' }}>Inter</option>
+                                    <option value="Raleway" style={{ fontFamily: 'Raleway' }}>Raleway</option>
+                                </select>
+                            </div>
                         </div>
                         {orderedFields.map((fieldDef: any) => renderField(fieldDef))}
                         <button
@@ -465,7 +533,8 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                     <div className="space-y-2">
                         {/* 제품 업로드 영역 */}
                         <div
-                            className={`h-24 border border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors ${productDragActive ? 'border-white bg-white/10' : 'border-[#3c3c3c] hover:border-[#555]'}`}
+                            style={{ minHeight: 100 }}
+                            className={`border border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors ${productDragActive ? 'border-blue-500 bg-blue-50' : 'border-[#E2E2E8] hover:border-gray-400 bg-white'}`}
                             onDragOver={handleProductDragOver}
                             onDragLeave={handleProductDragLeave}
                             onDrop={handleProductDrop}
@@ -479,10 +548,10 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                         {/* 분리형 이미지 패널 */}
                         <div className="grid grid-cols-2 gap-2">
                             {/* 왼쪽: 사용자 업로드 이미지 */}
-                            <div className="bg-[#252525] rounded p-2">
+                            <div className="bg-white border border-[#E2E2E8] rounded p-2">
                                 <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? '업로드' : 'Upload'}</span>
-                                    <span className="text-[12px] text-[#666]">{productFiles.length}</span>
+                                    <span className="text-[12px] font-medium text-[#666]">{lang === 'ko' ? '사용자 업로드' : 'User Upload'}</span>
+                                    <span className="text-[12px] text-[#999]">{productFiles.length}</span>
                                 </div>
                                 <div className="grid grid-cols-1 gap-1 min-h-[120px] max-h-[400px] overflow-y-auto">
                                     {productFiles.map((file: File, idx: number) => (
@@ -506,10 +575,10 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                             </div>
 
                             {/* 오른쪽: AI 생성 이미지 */}
-                            <div className="bg-[#252525] rounded p-2">
+                            <div className="bg-white border border-[#E2E2E8] rounded p-2">
                                 <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[12px] font-medium text-[#999]">{lang === 'ko' ? 'AI 생성' : 'AI Gen'}</span>
-                                    <span className="text-[12px] text-[#666]">{generatedImages.length}</span>
+                                    <span className="text-[12px] font-medium text-[#666]">{lang === 'ko' ? 'AI 생성' : 'AI Gen'}</span>
+                                    <span className="text-[12px] text-[#999]">{generatedImages.length}</span>
                                 </div>
                                 <div className="grid grid-cols-1 gap-1 min-h-[120px] max-h-[400px] overflow-y-auto">
                                     {generatedImages.map((url: string, idx: number) => (
@@ -525,7 +594,22 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                         >
                                             <img src={url} className="w-full h-full object-cover" alt={`Generated ${idx}`} />
                                             {selectedGeneratedIndices.has(idx) && <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center text-black text-[10px]">✓</div>}
-                                            <button onClick={(e) => { e.stopPropagation(); setGeneratedImages(prev => prev.filter((_, i) => i !== idx)); setSelectedGeneratedIndices(prev => { const n = new Set(prev); n.delete(idx); return n; }); }} className="absolute top-0.5 right-0.5 bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] hover:bg-red-500">×</button>
+                                            <div className="absolute top-0.5 right-0.5 flex gap-1">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = `ai_gen_${idx}_${Date.now()}.png`;
+                                                        a.click();
+                                                    }}
+                                                    className="bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] hover:bg-blue-500"
+                                                    title="Download"
+                                                >
+                                                    ↓
+                                                </button>
+                                                <button onClick={(e) => { e.stopPropagation(); setGeneratedImages(prev => prev.filter((_, i) => i !== idx)); setSelectedGeneratedIndices(prev => { const n = new Set(prev); n.delete(idx); return n; }); }} className="bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] hover:bg-red-500">×</button>
+                                            </div>
                                         </div>
                                     ))}
                                     {generatedImages.length === 0 && <div className="text-center text-[10px] text-[#555] py-4">{lang === 'ko' ? '없음' : 'None'}</div>}
@@ -535,7 +619,7 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
 
                         {/* 선택된 이미지 수 표시 */}
                         {(selectedUploadedIndices.size > 0 || selectedGeneratedIndices.size > 0) && (
-                            <div className="text-[11px] text-white text-center">
+                            <div className="text-[11px] text-[#666] text-center">
                                 {lang === 'ko' ? `${selectedUploadedIndices.size + selectedGeneratedIndices.size}개 선택됨` : `${selectedUploadedIndices.size + selectedGeneratedIndices.size} selected`}
                             </div>
                         )}
@@ -564,7 +648,7 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                     finally { setIsRemovingBg(false); setBgRemoveProgress({ current: 0, total: 0 }); }
                                 }}
                                 disabled={isRemovingBg || productFiles.length === 0}
-                                className={`w-full py-1.5 text-[11px] font-medium rounded transition-colors ${isRemovingBg || productFiles.length === 0 ? 'bg-[#3c3c3c] text-[#666]' : 'bg-[#2c2c2c] text-white hover:bg-[#3c3c3c] border border-[#3c3c3c]'}`}
+                                className={`w-full py-1.5 text-[11px] font-medium rounded transition-colors ${isRemovingBg || productFiles.length === 0 ? 'bg-gray-100 text-gray-400' : 'bg-[#111] text-white hover:bg-black border border-transparent'}`}
                             >
                                 {isRemovingBg ? `${bgRemoveProgress.current}/${bgRemoveProgress.total}` : (lang === 'ko' ? '배경 제거' : 'Remove BG')}
                             </button>
@@ -603,18 +687,64 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                         {/* 구분선 */}
                         <div className="border-t border-[#3c3c3c] my-3"></div>
 
-                        <ProductEnhancementPanel productFiles={productFiles} lang={lang} onResultsUpdate={(results: any) => {
-                            const doneResults = results.filter((r: any) => r.status === 'done' && r.url);
-                            if (doneResults.length > 0) {
-                                const newUrls = doneResults.map((r: any) => r.url!);
-                                setGeneratedImages(prev => [...prev, ...newUrls.filter((url: string) => !prev.includes(url))]);
-                            }
-                        }} onAddSectionWithImage={onAddSectionWithImage} />
+                        {/* 구분선 */}
+                        <div className="border-t border-[#3c3c3c] my-3"></div>
+
+                        <ProductEnhancementPanel
+                            productFiles={productFiles}
+                            previewSections={(() => {
+                                const sections: { id: string; url: string }[] = [];
+                                if (data.imageUrls) {
+                                    Object.entries(data.imageUrls).forEach(([key, url]) => {
+                                        if (typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:'))) {
+                                            sections.push({ id: key, url: url });
+                                        }
+                                    });
+                                }
+                                return sections;
+                            })()}
+                            lang={lang}
+                            onUpdatePreview={(sectionId, imageUrl) => {
+                                const newImageUrls = { ...data.imageUrls, [sectionId]: imageUrl };
+                                onUpdate({ ...data, imageUrls: newImageUrls });
+                            }}
+                            onResultsUpdate={(results: any) => {
+                                const doneResults = results.filter((r: any) => r.status === 'done' && r.url);
+                                if (doneResults.length > 0) {
+                                    const newUrls = doneResults.map((r: any) => r.url!);
+                                    setGeneratedImages(prev => {
+                                        const combined = [...prev, ...newUrls];
+                                        return Array.from(new Set(combined));
+                                    });
+                                }
+                            }}
+                            onAddSectionWithImage={onAddSectionWithImage}
+                        />
                     </div>
                 )}
 
-                {activeSection === 'models' && <ModelChapterPanel data={data} onUpdate={onUpdate} lang={lang} />}
-                {activeSection === 'contents' && <ContentGeneratorPanel productImages={productFiles.map((f: File) => URL.createObjectURL(f))} onAddToPreview={onAddSectionWithImage} lang={lang} />}
+                {activeSection === 'models' && (
+                    <ModelChapterPanel
+                        data={data}
+                        onUpdate={onUpdate}
+                        lang={lang}
+                        heldSections={heldSections}
+                        activeFilter={activeFilter}
+                        onFilterChange={onFilterChange}
+                    />
+                )}
+                {activeSection === 'contents' && (
+                    <ContentGeneratorPanel
+                        productImages={productFiles.map((f: File) => URL.createObjectURL(f))}
+                        onAddToPreview={onAddSectionWithImage}
+                        lang={lang}
+                        savedResults={data.contentGenerations || []}
+                        onUpdateResults={(results) => onUpdate({ ...data, contentGenerations: results })}
+                        onImageGenerated={(url) => {
+                            setGeneratedImages(prev => [...prev, url]);
+                        }}
+                    />
+                )}
 
                 {activeSection === 'closeup' && (
                     <div className="space-y-2">
@@ -1044,29 +1174,32 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                                                         iframe.style.height = '1200px';
                                                                         document.body.appendChild(iframe);
 
-                                                                        const doc = iframe.contentDocument || iframe.contentWindow?.document;
-                                                                        if (!doc) { document.body.removeChild(iframe); reject(new Error('iframe 생성 실패')); return; }
+                                                                        const doc = iframe.contentWindow?.document;
+                                                                        if (!doc) {
+                                                                            document.body.removeChild(iframe);
+                                                                            reject('Iframe document not found');
+                                                                            return;
+                                                                        }
 
                                                                         doc.open();
-                                                                        doc.write(`<!DOCTYPE html><html><head><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet"><style>*{margin:0;padding:0;box-sizing:border-box;}body{background:white;font-family:'Noto Sans KR',sans-serif;}</style></head><body>${htmlContent}</body></html>`);
+                                                                        doc.write(htmlContent);
                                                                         doc.close();
 
                                                                         setTimeout(async () => {
                                                                             try {
-                                                                                const html2canvasModule = await import('html2canvas');
-                                                                                const html2canvas = html2canvasModule.default;
+                                                                                const { default: html2canvas } = await import('html2canvas');
                                                                                 const canvas = await html2canvas(doc.body, {
-                                                                                    width: 800,
-                                                                                    backgroundColor: '#ffffff',
+                                                                                    scale: 2,
                                                                                     useCORS: true,
-                                                                                    scale: 2
+                                                                                    logging: false,
+                                                                                    backgroundColor: '#ffffff'
                                                                                 });
-                                                                                const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+                                                                                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
                                                                                 document.body.removeChild(iframe);
                                                                                 resolve(dataUrl);
-                                                                            } catch (e) {
+                                                                            } catch (error) {
                                                                                 document.body.removeChild(iframe);
-                                                                                reject(e);
+                                                                                reject(error);
                                                                             }
                                                                         }, 500);
                                                                     });
@@ -1075,37 +1208,11 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                                                 // Size Guide 섹션 추가
                                                                 if (data.showSizeGuide !== false) {
                                                                     try {
-                                                                        const sizeGuideImg = await htmlToImage(`
-                                                                        <div style="font-family: 'Noto Sans KR', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 24px; background: white;">
-                                                                            <h1 style="font-size: 28px; font-weight: 900; margin-bottom: 40px; text-align: center; letter-spacing: -0.5px;">SIZE GUIDE</h1>
-                                                                            <div style="background: #f9fafb; border-radius: 16px; padding: 40px; margin-bottom: 24px; text-align: center;">
-                                                                                <p style="color: #9ca3af; font-size: 14px;">[제품 이미지 영역]</p>
-                                                                            </div>
-                                                                            <p style="font-size: 12px; color: #6b7280; text-align: center; margin-bottom: 32px;">* 250사이즈 기준</p>
-                                                                            <div style="display: flex; flex-direction: column; gap: 24px;">
-                                                                                <div style="display: flex; align-items: center; gap: 16px;">
-                                                                                    <span style="width: 80px; font-weight: 700;">사이즈</span>
-                                                                                    <div style="flex: 1; display: flex; justify-content: space-between; font-size: 12px; color: #6b7280;">
-                                                                                        <span>작음</span><span style="font-weight: 700; color: black;">보통</span><span>여유</span>
-                                                                                    </div>
-                                                                                </div>
-                                                                                <div style="display: flex; align-items: center; gap: 16px;">
-                                                                                    <span style="width: 80px; font-weight: 700;">발볼 너비</span>
-                                                                                    <div style="flex: 1; display: flex; justify-content: space-between; font-size: 12px; color: #6b7280;">
-                                                                                        <span>좁음</span><span style="font-weight: 700; color: black;">보통</span><span>넓음</span>
-                                                                                    </div>
-                                                                                </div>
-                                                                                <div style="display: flex; align-items: center; gap: 16px;">
-                                                                                    <span style="width: 80px; font-weight: 700;">무게</span>
-                                                                                    <div style="flex: 1; display: flex; justify-content: space-between; font-size: 12px; color: #6b7280;">
-                                                                                        <span>가벼움</span><span style="font-weight: 700; color: black;">보통</span><span>무거움</span>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    `, 'Size Guide');
+                                                                        const sizeGuideImg = await htmlToImage(sizeGuideHtml, 'Size Guide');
                                                                         onAddSectionWithImage?.(sizeGuideImg, 'size-guide');
-                                                                    } catch (e) { console.error('Size Guide 변환 실패:', e); }
+                                                                    } catch (e) {
+                                                                        console.error('Size Guide generation failed:', e);
+                                                                    }
                                                                 }
 
                                                                 // 주의사항 섹션 추가
@@ -1234,6 +1341,39 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                             placeholder="250"
                                         />
                                     </div>
+                                    {/* 사이즈 스펙 입력 필드 */}
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '전체 길이 (mm)' : 'Total Length'}</label>
+                                            <input
+                                                type="number"
+                                                value={data.sizeGuideContent?.specLength || '280'}
+                                                onChange={(e) => onUpdate({ ...data, sizeGuideContent: { ...data.sizeGuideContent, specLength: e.target.value } })}
+                                                style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
+                                                placeholder="280"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '전체 높이 (mm)' : 'Total Height'}</label>
+                                            <input
+                                                type="number"
+                                                value={data.sizeGuideContent?.specWidth || '100'}
+                                                onChange={(e) => onUpdate({ ...data, sizeGuideContent: { ...data.sizeGuideContent, specWidth: e.target.value } })}
+                                                style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
+                                                placeholder="100"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '굽높이 (mm)' : 'Heel Height'}</label>
+                                            <input
+                                                type="number"
+                                                value={data.sizeGuideContent?.specHeel || '35'}
+                                                onChange={(e) => onUpdate({ ...data, sizeGuideContent: { ...data.sizeGuideContent, specHeel: e.target.value } })}
+                                                style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
+                                                placeholder="35"
+                                            />
+                                        </div>
+                                    </div>
                                     <div className="grid grid-cols-3 gap-2">
                                         <div>
                                             <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '사이즈' : 'Size'}</label>
@@ -1300,65 +1440,95 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                 </div>
                             </div>
                             {!collapsedSections.asInfo && (
-                                <div className="space-y-2">
-                                    <div>
-                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '제목' : 'Title'}</label>
-                                        <input
-                                            type="text"
-                                            value={data.asInfoContent?.title || 'A/S 안내'}
-                                            onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, title: e.target.value } })}
-                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
+                                <div className="space-y-3">
+                                    {/* 제품 하자 안내 */}
+                                    <div style={{ borderBottom: `1px solid ${colors.borderSoft}`, paddingBottom: 10 }}>
+                                        <label style={{ fontSize: 11, color: colors.textSecondary, display: 'block', marginBottom: 6, fontWeight: 600 }}>제품에 하자가 있을 경우</label>
+                                        <textarea
+                                            value={data.asInfoContent?.defectInfo || '제품 상태 확인 후 정확한 안내가 가능합니다.\n구매처 문의하기를 통해 [사진/영상] 자료와 함께 내용을 남겨주시면, 유관부서 전달 후 조치 방안을 상세히 안내드리겠습니다.'}
+                                            onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, defectInfo: e.target.value } })}
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary, minHeight: 60, resize: 'vertical' }}
                                         />
                                     </div>
-                                    <div>
-                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '고객센터 번호' : 'Contact Number'}</label>
+
+                                    {/* A/S 연락처 */}
+                                    <div style={{ borderBottom: `1px solid ${colors.borderSoft}`, paddingBottom: 10 }}>
+                                        <label style={{ fontSize: 11, color: colors.textSecondary, display: 'block', marginBottom: 6, fontWeight: 600 }}>A/S 안내</label>
                                         <input
                                             type="text"
+                                            placeholder="고객센터 번호"
                                             value={data.asInfoContent?.phone || '000-0000-0000'}
                                             onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, phone: e.target.value } })}
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary, marginBottom: 6 }}
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="채널 문의 (예: @카카오톡채널아이디)"
+                                            value={data.asInfoContent?.channel || '@카카오톡채널아이디'}
+                                            onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, channel: e.target.value } })}
                                             style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
                                         />
                                     </div>
-                                    <div>
-                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '안내 사항 1' : 'Info 1'}</label>
+
+                                    {/* CAUTION 항목들 */}
+                                    <div style={{ borderBottom: `1px solid ${colors.borderSoft}`, paddingBottom: 10 }}>
+                                        <label style={{ fontSize: 11, color: '#dc2626', display: 'block', marginBottom: 6, fontWeight: 600 }}>⚠️ CAUTION (주의사항)</label>
                                         <textarea
-                                            value={data.asInfoContent?.info1 || '제품 상태 확인 후 정확한 안내가 가능합니다.\n사진/영상 자료와 함께 문의해 주세요.'}
-                                            onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, info1: e.target.value } })}
-                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary, minHeight: 50, resize: 'vertical' }}
+                                            value={data.asInfoContent?.caution1 || '가죽 특성상 개체별 색감 차이, 고유 주름 및 미세 스크래치가 있을 수 있으며, 이염이 발생할 수 있습니다.'}
+                                            onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, caution1: e.target.value } })}
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary, minHeight: 40, resize: 'vertical', marginBottom: 6 }}
+                                        />
+                                        <textarea
+                                            value={data.asInfoContent?.caution2 || '생산 과정의 에이징 작업으로 인해 수령 시 자연스러운 주름이 있을 수 있으며 이는 불량이 아닙니다.'}
+                                            onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, caution2: e.target.value } })}
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary, minHeight: 40, resize: 'vertical', marginBottom: 6 }}
+                                        />
+                                        <textarea
+                                            value={data.asInfoContent?.caution3 || '사이즈 확인 과정에서 제품 하자(가죽 손상, 과도한 시착 주름) 발생 시 교환/환불이 불가합니다. 동봉된 슈혼 사용을 권장합니다.'}
+                                            onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, caution3: e.target.value } })}
+                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: '#dc2626', minHeight: 40, resize: 'vertical', fontWeight: 500 }}
                                         />
                                     </div>
+
+                                    {/* 교환/환불 정책 */}
                                     <div>
-                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '주의사항 (빨간색)' : 'Cautions (Red)'}</label>
-                                        <textarea
-                                            value={data.asInfoContent?.cautions || '가죽 특성상 개체별 색감 차이가 있을 수 있습니다.\n사이즈 확인 시 제품 하자 발생 시 교환/환불이 불가합니다.'}
-                                            onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, cautions: e.target.value } })}
-                                            style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary, minHeight: 50, resize: 'vertical' }}
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '글꼴 크기' : 'Font'}: {data.asInfoContent?.fontSize || 14}px</label>
-                                            <input
-                                                type="range"
-                                                min="10"
-                                                max="24"
-                                                value={data.asInfoContent?.fontSize || 14}
-                                                onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, fontSize: parseInt(e.target.value) } })}
-                                                className="minimal-slider"
-                                                style={{ accentColor: colors.accentPrimary }}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '너비' : 'Width'}: {data.asInfoContent?.width || 100}%</label>
-                                            <input
-                                                type="range"
-                                                min="50"
-                                                max="100"
-                                                value={data.asInfoContent?.width || 100}
-                                                onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, width: parseInt(e.target.value) } })}
-                                                className="minimal-slider"
-                                                style={{ accentColor: colors.accentPrimary }}
-                                            />
+                                        <label style={{ fontSize: 11, color: colors.textSecondary, display: 'block', marginBottom: 6, fontWeight: 600 }}>교환/환불 정책</label>
+                                        <div className="space-y-2">
+                                            <div>
+                                                <label style={{ fontSize: 10, color: colors.textMuted }}>가능 조건</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.asInfoContent?.refundCondition || '상품 수령 후 7일 이내, 제품을 착용한 흔적이 없는 경우에 한해 가능합니다.'}
+                                                    onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, refundCondition: e.target.value } })}
+                                                    style={{ width: '100%', padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 10, color: colors.textPrimary }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: 10, color: colors.textMuted }}>비용 안내</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.asInfoContent?.refundCost || '제품 하자: 무료 교환/환불, 단순 변심: 고객 부담 (왕복 배송비)'}
+                                                    onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, refundCost: e.target.value } })}
+                                                    style={{ width: '100%', padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 10, color: colors.textPrimary }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: 10, color: colors.textMuted }}>불가능한 경우 (줄바꿈으로 구분)</label>
+                                                <textarea
+                                                    value={data.asInfoContent?.refundImpossible || '상품이 훼손 되었거나 사용(착용) 흔적이 있는 경우\n소비자 귀책으로 상품이 멸실 또는 훼손된 경우\n시간 경과로 재판매가 곤란할 정도로 상품 가치가 감소한 경우\n복제 가능한 상품의 포장을 개봉한 경우\n주문 제작(커스텀) 상품인 경우'}
+                                                    onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, refundImpossible: e.target.value } })}
+                                                    style={{ width: '100%', padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 10, color: colors.textPrimary, minHeight: 60, resize: 'vertical' }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: 10, color: colors.textMuted }}>신청 절차</label>
+                                                <input
+                                                    type="text"
+                                                    value={data.asInfoContent?.refundProcedure || '구매처 고객센터를 통해 신청 접수 → 반송 안내에 따라 상품 발송 → 상품 검수 후 3~5영업일 이내 처리'}
+                                                    onChange={(e) => onUpdate({ ...data, asInfoContent: { ...data.asInfoContent, refundProcedure: e.target.value } })}
+                                                    style={{ width: '100%', padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 10, color: colors.textPrimary }}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1377,9 +1547,9 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                 </div>
                             </div>
                             {!collapsedSections.precautions && (
-                                <div className="space-y-2">
+                                <div className="space-y-3">
                                     <div>
-                                        <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '제목' : 'Title'}</label>
+                                        <label style={{ fontSize: 11, color: colors.textSecondary, display: 'block', marginBottom: 6, fontWeight: 600 }}>제목</label>
                                         <input
                                             type="text"
                                             value={data.precautionsContent?.title || '기타 주의 사항'}
@@ -1387,56 +1557,85 @@ JSON만 출력하세요. 다른 텍스트 없이 순수 JSON만 출력하세요.
                                             style={{ width: '100%', padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 11, color: colors.textPrimary }}
                                         />
                                     </div>
-                                    {[1, 2, 3, 4].map((idx) => (
-                                        <div key={idx} className="grid grid-cols-[80px_1fr] gap-2">
+
+                                    {/* 습기 주의 */}
+                                    <div style={{ borderBottom: `1px solid ${colors.borderSoft}`, paddingBottom: 10 }}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span style={{ fontSize: 14 }}>💧</span>
                                             <input
                                                 type="text"
-                                                value={data.precautionsContent?.[`item${idx}Title`] || ['습기 주의', '직사광선 주의', '보관 방법', '오염 관리'][idx - 1]}
-                                                onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, [`item${idx}Title`]: e.target.value } })}
-                                                style={{ padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 10, color: colors.textPrimary }}
-                                                placeholder={`항목 ${idx}`}
+                                                value={data.precautionsContent?.item1Title || '습기 주의'}
+                                                onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, item1Title: e.target.value } })}
+                                                style={{ flex: 1, padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 11, color: colors.textPrimary, fontWeight: 600 }}
                                             />
+                                        </div>
+                                        <textarea
+                                            value={data.precautionsContent?.item1Desc || '가죽 제품은 습기에 약해 변색이나 얼룩이 생길 수 있습니다. 우천 시 착용을 피하고, 젖었을 땐 마른 수건으로 닦아 통풍이 잘되는 그늘에 건조해 주세요.'}
+                                            onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, item1Desc: e.target.value } })}
+                                            style={{ width: '100%', padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 10, color: colors.textPrimary, minHeight: 50, resize: 'vertical' }}
+                                        />
+                                    </div>
+
+                                    {/* 직사광선 주의 */}
+                                    <div style={{ borderBottom: `1px solid ${colors.borderSoft}`, paddingBottom: 10 }}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span style={{ fontSize: 14 }}>☀️</span>
                                             <input
                                                 type="text"
-                                                value={data.precautionsContent?.[`item${idx}Desc`] || ['가죽 제품은 습기에 약해 변색이나 얼룩이 생길 수 있습니다.', '직사광선에 장시간 노출 시 가죽 변색 우려가 있습니다.', '통기성 좋은 천 커버를 사용해 주세요.', '가죽 전용 클리너를 이용해 주세요.'][idx - 1]}
-                                                onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, [`item${idx}Desc`]: e.target.value } })}
-                                                style={{ padding: '8px 10px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 8, fontSize: 10, color: colors.textPrimary }}
-                                                placeholder={`설명 ${idx}`}
+                                                value={data.precautionsContent?.item2Title || '직사광선 주의'}
+                                                onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, item2Title: e.target.value } })}
+                                                style={{ flex: 1, padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 11, color: colors.textPrimary, fontWeight: 600 }}
                                             />
                                         </div>
-                                    ))}
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '글꼴 크기' : 'Font'}: {data.precautionsContent?.fontSize || 14}px</label>
+                                        <textarea
+                                            value={data.precautionsContent?.item2Desc || '직사광선에 장시간 노출 시 가죽 변색이나 이염 우려가 있습니다. 보관 시에는 햇빛이 닿지 않는 서늘한 곳을 권장합니다.'}
+                                            onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, item2Desc: e.target.value } })}
+                                            style={{ width: '100%', padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 10, color: colors.textPrimary, minHeight: 50, resize: 'vertical' }}
+                                        />
+                                    </div>
+
+                                    {/* 보관 방법 */}
+                                    <div style={{ borderBottom: `1px solid ${colors.borderSoft}`, paddingBottom: 10 }}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span style={{ fontSize: 14 }}>📦</span>
                                             <input
-                                                type="range"
-                                                min="10"
-                                                max="24"
-                                                value={data.precautionsContent?.fontSize || 14}
-                                                onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, fontSize: parseInt(e.target.value) } })}
-                                                className="minimal-slider"
-                                                style={{ accentColor: colors.accentPrimary }}
+                                                type="text"
+                                                value={data.precautionsContent?.item3Title || '보관 방법'}
+                                                onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, item3Title: e.target.value } })}
+                                                style={{ flex: 1, padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 11, color: colors.textPrimary, fontWeight: 600 }}
                                             />
                                         </div>
-                                        <div>
-                                            <label style={{ fontSize: 10, color: colors.textMuted, display: 'block', marginBottom: 4 }}>{lang === 'ko' ? '너비' : 'Width'}: {data.precautionsContent?.width || 100}%</label>
+                                        <textarea
+                                            value={data.precautionsContent?.item3Desc || '슈트리를 넣어 형태를 유지하고, 통기성 좋은 천 커버를 사용해 주세요. 밀폐된 비닐백 보관은 피해주세요.'}
+                                            onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, item3Desc: e.target.value } })}
+                                            style={{ width: '100%', padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 10, color: colors.textPrimary, minHeight: 50, resize: 'vertical' }}
+                                        />
+                                    </div>
+
+                                    {/* 오염 관리 */}
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span style={{ fontSize: 14 }}>🧽</span>
                                             <input
-                                                type="range"
-                                                min="50"
-                                                max="100"
-                                                value={data.precautionsContent?.width || 100}
-                                                onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, width: parseInt(e.target.value) } })}
-                                                className="minimal-slider"
-                                                style={{ accentColor: colors.accentPrimary }}
+                                                type="text"
+                                                value={data.precautionsContent?.item4Title || '오염 관리'}
+                                                onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, item4Title: e.target.value } })}
+                                                style={{ flex: 1, padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 11, color: colors.textPrimary, fontWeight: 600 }}
                                             />
                                         </div>
+                                        <textarea
+                                            value={data.precautionsContent?.item4Desc || '오염 발생 시 가죽 전용 클리너를 이용해 주세요. 물이나 일반 세제 사용은 피해주세요.'}
+                                            onChange={(e) => onUpdate({ ...data, precautionsContent: { ...data.precautionsContent, item4Desc: e.target.value } })}
+                                            style={{ width: '100%', padding: '6px 8px', background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}`, borderRadius: 6, fontSize: 10, color: colors.textPrimary, minHeight: 50, resize: 'vertical' }}
+                                        />
                                     </div>
                                 </div>
                             )}
                         </div>
-                    </div>
-                )}
-            </div>
-        </div>
+                    </div >
+                )
+                }
+            </div >
+        </div >
     );
 }

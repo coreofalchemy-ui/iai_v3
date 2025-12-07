@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 const colors = { bgBase: '#F5F5F7', bgSurface: '#FFFFFF', bgSubtle: '#F0F0F4', borderSoft: '#E2E2E8', textPrimary: '#111111', textSecondary: '#6E6E73', textMuted: '#A1A1AA', accentPrimary: '#111111' };
 
 interface QuickTransferModalProps { visible: boolean; onClose: () => void; onGenerate: (options: QuickTransferOptions) => void; }
-export interface QuickTransferOptions { models: { name: string; url: string }[]; shoes: { name: string; url: string }[]; beautify: boolean; studio: boolean; modelCuts: number; closeupCuts: number; }
+export interface QuickTransferOptions { models: { name: string; url: string }[]; shoes: { name: string; url: string }[]; beautify: boolean; studio: boolean; modelCuts: number; closeupCuts: number; resolution: '1K' | '4K'; customBackground?: string; }
 
 const MAX_MODELS = 5, MAX_SHOES = 10;
 export const POSE_VARIATIONS = ['standing-front', 'standing-side', 'walking-casual', 'sitting-relaxed', 'leaning-wall', 'stepping-forward', 'cross-leg-stand', 'dynamic-motion', 'fashion-pose', 'street-style'] as const;
@@ -15,10 +15,14 @@ export default function QuickTransferModal({ visible, onClose, onGenerate }: Qui
     const [studio, setStudio] = useState(true);
     const [modelCuts, setModelCuts] = useState(3);
     const [closeupCuts, setCloseupCuts] = useState(3);
+    const [resolution, setResolution] = useState<'1K' | '4K'>('1K');
     const [isDraggingModel, setIsDraggingModel] = useState(false);
     const [isDraggingShoe, setIsDraggingShoe] = useState(false);
+    const [isDraggingBg, setIsDraggingBg] = useState(false);
+    const [customBackground, setCustomBackground] = useState<{ file: File; preview: string } | null>(null);
     const modelInputRef = useRef<HTMLInputElement>(null);
     const shoeInputRef = useRef<HTMLInputElement>(null);
+    const bgInputRef = useRef<HTMLInputElement>(null);
 
     if (!visible) return null;
 
@@ -36,6 +40,13 @@ export default function QuickTransferModal({ visible, onClose, onGenerate }: Qui
 
     const removeModel = (i: number) => { setModels(prev => { const n = [...prev]; URL.revokeObjectURL(n[i].preview); n.splice(i, 1); return n; }); };
     const removeShoe = (i: number) => { setShoes(prev => { const n = [...prev]; URL.revokeObjectURL(n[i].preview); n.splice(i, 1); return n; }); };
+    const handleBgSelect = (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+        const file = files[0];
+        if (customBackground) URL.revokeObjectURL(customBackground.preview);
+        setCustomBackground({ file, preview: URL.createObjectURL(file) });
+    };
+    const removeBg = () => { if (customBackground) { URL.revokeObjectURL(customBackground.preview); setCustomBackground(null); } };
 
     const canGenerate = models.length > 0 && shoes.length > 0;
 
@@ -115,6 +126,43 @@ export default function QuickTransferModal({ visible, onClose, onGenerate }: Qui
                         </div>
                     </div>
 
+                    {/* Custom Background Upload (appears when Studio is enabled) */}
+                    {studio && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                            <div onClick={() => bgInputRef.current?.click()}
+                                onDrop={(e) => { e.preventDefault(); setIsDraggingBg(false); handleBgSelect(e.dataTransfer.files); }}
+                                onDragOver={(e) => { e.preventDefault(); setIsDraggingBg(true); }}
+                                onDragLeave={() => setIsDraggingBg(false)}
+                                style={{ border: `2px dashed ${isDraggingBg ? '#10B981' : colors.borderSoft}`, borderRadius: 16, background: isDraggingBg ? '#ECFDF5' : colors.bgSurface, minHeight: 120 }}
+                                className="flex flex-col items-center justify-center cursor-pointer transition-all hover:border-green-400">
+                                <input ref={bgInputRef} type="file" accept="image/*" onChange={(e) => handleBgSelect(e.target.files)} className="hidden" />
+                                <div style={{ width: 48, height: 48, background: '#ECFDF5', borderRadius: 14 }} className="flex items-center justify-center mb-2">
+                                    <span className="text-xl">🏞️</span>
+                                </div>
+                                <p style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>커스텀 배경 (선택)</p>
+                                <p style={{ fontSize: 10, color: colors.textMuted }} className="mt-1">배경을 업로드하면 AI가 자연스럽게 합성</p>
+                            </div>
+                            <div style={{ background: customBackground ? 'transparent' : colors.bgSubtle, borderRadius: 16, minHeight: 120, overflow: 'hidden', position: 'relative' }}>
+                                {customBackground ? (
+                                    <div className="relative w-full h-full">
+                                        <img src={customBackground.preview} alt="Custom Background" className="w-full h-full object-cover" style={{ minHeight: 120 }} />
+                                        <button onClick={(e) => { e.stopPropagation(); removeBg(); }}
+                                            style={{ background: '#FF3B30', position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: 12, color: 'white', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            ×
+                                        </button>
+                                        <div style={{ position: 'absolute', bottom: 8, left: 8, background: '#10B981', color: 'white', fontSize: 10, padding: '3px 8px', borderRadius: 6, fontWeight: 500 }}>
+                                            커스텀 배경 적용
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="h-full flex items-center justify-center p-4">
+                                        <p style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center' }}>배경 없음 - 기본 스튜디오 배경 사용</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Options */}
                     <div style={{ background: colors.bgSurface, border: `1px solid ${colors.borderSoft}`, borderRadius: 16 }} className="p-5">
                         <h3 style={{ fontSize: 13, fontWeight: 600, color: colors.textPrimary }} className="mb-4">옵션</h3>
@@ -147,6 +195,28 @@ export default function QuickTransferModal({ visible, onClose, onGenerate }: Qui
                                     <button key={n} onClick={() => setCloseupCuts(n)} style={{ width: 36, height: 36, borderRadius: 8, background: closeupCuts === n ? colors.accentPrimary : colors.bgSubtle, color: closeupCuts === n ? '#FFF' : colors.textPrimary, fontSize: 13, fontWeight: 500, border: `1px solid ${colors.borderSoft}` }}>{n}</button>
                                 ))}</div>
                             </div>
+                            <div className="col-span-2">
+                                <label style={{ fontSize: 12, fontWeight: 500, color: colors.textSecondary }} className="block mb-2">Quality (Resolution)</label>
+                                <div className="flex gap-3">
+                                    {[
+                                        { id: '1K', label: '⚡ Fast (1K)', desc: 'Standard speed' },
+                                        { id: '4K', label: '✨ Ultra (4K)', desc: 'Gemini 3 Pro Quality' }
+                                    ].map(opt => (
+                                        <button key={opt.id} onClick={() => setResolution(opt.id as any)}
+                                            style={{
+                                                flex: 1, padding: '10px',
+                                                borderRadius: 12,
+                                                background: resolution === opt.id ? colors.accentPrimary : colors.bgSubtle,
+                                                color: resolution === opt.id ? '#FFF' : colors.textPrimary,
+                                                border: `1px solid ${colors.borderSoft}`,
+                                                textAlign: 'left'
+                                            }}>
+                                            <div style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</div>
+                                            <div style={{ fontSize: 11, opacity: 0.8 }}>{opt.desc}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -154,7 +224,7 @@ export default function QuickTransferModal({ visible, onClose, onGenerate }: Qui
                 {/* Footer */}
                 <div style={{ borderTop: `1px solid ${colors.borderSoft}` }} className="p-6 flex gap-3">
                     <button onClick={onClose} style={{ flex: 1, padding: '14px 24px', background: 'transparent', border: `1px solid ${colors.borderSoft}`, borderRadius: 12, fontSize: 14, fontWeight: 500, color: colors.textPrimary }} className="hover:bg-gray-50">취소</button>
-                    <button onClick={() => onGenerate({ models: models.map(m => ({ name: m.file.name, url: m.preview })), shoes: shoes.map(s => ({ name: s.file.name, url: s.preview })), beautify, studio, modelCuts, closeupCuts })}
+                    <button onClick={() => onGenerate({ models: models.map(m => ({ name: m.file.name, url: m.preview })), shoes: shoes.map(s => ({ name: s.file.name, url: s.preview })), beautify, studio, modelCuts, closeupCuts, resolution, customBackground: customBackground?.preview })}
                         disabled={!canGenerate}
                         style={{ flex: 1, padding: '14px 24px', background: canGenerate ? colors.accentPrimary : colors.borderSoft, color: canGenerate ? '#FFF' : colors.textMuted, borderRadius: 12, fontSize: 14, fontWeight: 500 }}
                         className="disabled:cursor-not-allowed">

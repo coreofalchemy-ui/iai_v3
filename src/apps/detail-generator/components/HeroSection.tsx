@@ -9,6 +9,7 @@ interface HeroSectionProps {
     content: any;
     fieldSettings?: Record<string, FieldSettings>;
     fieldOrder?: string[];
+    fontFamily?: string;
 }
 
 // Default settings
@@ -38,7 +39,7 @@ const DEFAULT_TEXT: Record<string, string> = {
     sizeGuide: '🤖 AI가 사이즈 추천 및 가이드를 자동으로 작성합니다\n평소 신는 사이즈 그대로 추천드립니다',
 };
 
-export const HeroSection: React.FC<HeroSectionProps> = ({ content, fieldSettings, fieldOrder }) => {
+export const HeroSection: React.FC<HeroSectionProps> = ({ content, fieldSettings, fieldOrder, fontFamily = 'Noto Sans KR' }) => {
     const data = content || {};
     const settings = { ...DEFAULT_SETTINGS, ...fieldSettings };
     const order = fieldOrder || DEFAULT_ORDER;
@@ -76,14 +77,14 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ content, fieldSettings
 
             case 'stylingMatch':
                 return (
-                    <div key={fieldId} style={{ marginBottom: '12px', fontSize: `${getFontSize('stylingMatch')}px`, lineHeight: 1.7, color: data.stylingMatch ? '#444' : '#9ca3af', fontStyle: data.stylingMatch ? 'normal' : 'italic' }}>
+                    <div key={fieldId} style={{ marginBottom: '12px', fontSize: `${getFontSize('stylingMatch')}px`, lineHeight: 1.7, color: data.stylingMatch ? '#444' : '#9ca3af', fontStyle: data.stylingMatch ? 'normal' : 'italic', whiteSpace: 'pre-line' }}>
                         {getText('stylingMatch')}
                     </div>
                 );
 
             case 'craftsmanship':
                 return (
-                    <div key={fieldId} style={{ marginBottom: '16px', fontSize: `${getFontSize('craftsmanship')}px`, lineHeight: 1.7, color: data.craftsmanship ? '#444' : '#9ca3af', fontStyle: data.craftsmanship ? 'normal' : 'italic' }}>
+                    <div key={fieldId} style={{ marginBottom: '16px', fontSize: `${getFontSize('craftsmanship')}px`, lineHeight: 1.7, color: data.craftsmanship ? '#444' : '#9ca3af', fontStyle: data.craftsmanship ? 'normal' : 'italic', whiteSpace: 'pre-line' }}>
                         {getText('craftsmanship')}
                     </div>
                 );
@@ -92,7 +93,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ content, fieldSettings
                 return (
                     <div key={fieldId} style={{ backgroundColor: '#f9fafb', borderLeft: '4px solid #111', padding: '16px', marginBottom: '16px', borderRadius: '0 8px 8px 0' }}>
                         <h3 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 700, color: '#111' }}>Technology</h3>
-                        <p style={{ margin: '0', fontSize: `${getFontSize('technology')}px`, color: data.technology ? '#555' : '#9ca3af', lineHeight: 1.6, fontStyle: data.technology ? 'normal' : 'italic' }}>
+                        <p style={{ margin: '0', fontSize: `${getFontSize('technology')}px`, color: data.technology ? '#555' : '#9ca3af', lineHeight: 1.6, fontStyle: data.technology ? 'normal' : 'italic', whiteSpace: 'pre-line' }}>
                             {getText('technology')}
                         </p>
                     </div>
@@ -124,8 +125,8 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ content, fieldSettings
                                 <span style={{ fontWeight: 500 }}>{data.specOrigin || '🤖 AI 분석'}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f3f4f6', paddingBottom: '5px' }}>
-                                <span style={{ color: '#9ca3af' }}>굽 높이</span>
-                                <span style={{ fontWeight: 500 }}>{data.heelHeight || '🤖 AI 분석'}</span>
+                                <span style={{ color: '#9ca3af' }}>Heel Height</span>
+                                <span style={{ fontWeight: 500 }}>{data.heelHeight || '3.5cm'}</span>
                             </div>
                         </div>
                     </div>
@@ -137,16 +138,16 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ content, fieldSettings
                         <h3 style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '1px', marginBottom: '12px', textTransform: 'uppercase', color: '#111', borderBottom: '2px solid #111', paddingBottom: '4px', display: 'inline-block' }}>Height Spec</h3>
                         <div style={{ display: 'flex', justifyContent: 'space-between', background: '#fff', border: '1px solid #e5e7eb', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
                             <div style={{ textAlign: 'center', flex: 1 }}>
-                                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>아웃솔 (Outsole)</div>
-                                <div style={{ fontWeight: 700, fontSize: `${getFontSize('heightSpec')}px`, color: '#111' }}>{data.outsole || '3'} CM</div>
+                                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>Outsole</div>
+                                <div style={{ fontWeight: 700, fontSize: `${getFontSize('heightSpec')}px`, color: '#111' }}>{data.outsole || '3cm'}</div>
                             </div>
                             <div style={{ textAlign: 'center', flex: 1, borderLeft: '1px solid #e5e7eb', borderRight: '1px solid #e5e7eb' }}>
-                                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>인솔 (Insole)</div>
-                                <div style={{ fontWeight: 700, fontSize: `${getFontSize('heightSpec')}px`, color: '#111' }}>{data.insole || '1.5'} CM</div>
+                                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>Insole</div>
+                                <div style={{ fontWeight: 700, fontSize: `${getFontSize('heightSpec')}px`, color: '#111' }}>{data.insole || '1.5cm'}</div>
                             </div>
                             <div style={{ textAlign: 'center', flex: 1 }}>
-                                <div style={{ fontSize: '11px', color: '#ef4444', marginBottom: '4px', fontWeight: 600 }}>총 키높이 (Total)</div>
-                                <div style={{ fontWeight: 800, fontSize: `${getFontSize('heightSpec') + 2}px`, color: '#ef4444' }}>{data.totalHeight || '4.5'} CM</div>
+                                <div style={{ fontSize: '11px', color: '#ef4444', marginBottom: '4px', fontWeight: 600 }}>Total</div>
+                                <div style={{ fontWeight: 800, fontSize: `${getFontSize('heightSpec') + 2}px`, color: '#ef4444' }}>{data.totalHeight || '4.5cm'}</div>
                             </div>
                         </div>
                     </div>
@@ -172,7 +173,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ content, fieldSettings
     };
 
     return (
-        <div data-section="hero" className="hero-section" style={{ padding: '20px 40px 8px', maxWidth: '1000px', margin: '0 auto', fontFamily: "'Noto Sans KR', sans-serif", color: '#333', backgroundColor: 'white' }}>
+        <div data-section="hero" className="hero-section" style={{ padding: '20px 40px 8px', maxWidth: '1000px', margin: '0 auto', fontFamily: `'${fontFamily}', sans-serif`, color: '#333', backgroundColor: 'white' }}>
             {order.map(fieldId => renderField(fieldId))}
         </div>
     );

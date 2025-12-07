@@ -18,40 +18,22 @@ export async function replaceShoe(options: ShoeReplacementOptions): Promise<stri
     const contentBase64 = await urlToBase64(options.contentImageUrl);
     const shoeBase64 = await urlToBase64(options.newShoeImageUrl);
 
-    const prompt = `[TASK: PRECISION SHOE REPLACEMENT]
+    const prompt = `[PROTOCOL: INPAINTING & COMPOSITING - GEMINI 3.0]
 
-[IMAGE 1] CONTENT - Photo where shoes need to be replaced
-[IMAGE 2] NEW SHOE - The exact shoe product to use as replacement
+**TASK**: Remove the original shoes in [IMAGE 1] and composite [IMAGE 2] (New Shoe) into that exact position.
 
-[SHOE ANALYSIS - CRITICAL]
-Carefully analyze NEW SHOE (Image 2) for:
-- OUTSOLE: Exact shape, thickness, tread pattern, color
-- UPPER: Material texture (leather, suede, canvas, mesh), color, pattern
-- STITCHING: Thread color, stitch type, placement
-- CONSTRUCTION: Sole attachment method, heel design, toe shape
-- DETAILS: Laces, eyelets, branding, decorative elements, pull tabs
+**STRICT RULES:**
+1.  **MASKING**: Completely ERASE the original shoes in [IMAGE 1].
+2.  **PATCHING**: Insert [IMAGE 2] (New Shoe) into the erassed area.
+    *   **TEXTURE LOCK**: The inserted shoe MUST retain 100% of [IMAGE 2]'s upper material, outsole pattern, logos, and stitching.
+    *   **NO HALLUCINATION**: Do not invent new details. Copy [IMAGE 2] exactly.
+    *   **PERSPECTIVE WARP**: Warping [IMAGE 2] to fit the model's foot angle is allowed, but changing the design is FORBIDDEN.
+3.  **ENVIRONMENT**:
+    *   **SHADOWS**: Preserve the original ground shadows from [IMAGE 1].
+    *   **LIGHTING**: Adjust the brightness/contrast of the inserted shoe to match [IMAGE 1]'s scene.
+4.  **OUTSOLE PRECISION**: The outsole (bottom of shoe) must match [IMAGE 2] exactly. Do not flatten or simplify it.
 
-[REPLACEMENT RULES]
-1. Replace ALL shoes visible in Image 1 with the EXACT shoe from Image 2
-2. Each replacement shoe MUST have:
-   - Identical outsole design and tread pattern
-   - Identical upper material and texture rendering
-   - Identical stitching details
-   - Identical color (match EXACTLY)
-   - Correct perspective matching the foot angle
-3. PRESERVE everything else in Image 1:
-   - Model's pose, body, clothing, face
-   - Background and environment
-   - Lighting and shadows
-
-[QUALITY]
-- 1K resolution output
-- Professional commercial photography quality
-- Realistic material rendering
-- Natural shadows under the shoes
-
-[OUTPUT]
-Same scene as Image 1 with shoes replaced by exact copy of Image 2's shoe.`;
+**OUTPUT GOAL**: A photorealistic composite where the model is wearing the EXACT shoe from [IMAGE 2].`;
 
     const result = await callGeminiSecure(
         prompt,

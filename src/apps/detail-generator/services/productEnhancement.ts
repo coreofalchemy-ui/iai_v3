@@ -125,6 +125,11 @@ All details = IDENTICAL
     const studioBase = `${SYSTEM_ROLE}
 **[TASK: EDITORIAL SCENE GENERATION]**
 **CONSTRAINT:** Use the shoe from input. Do not generate generic shoe.
+
+**[COMPOSITION RULES - STRICT]**
+1. **CENTERED SUBJECT**: The shoe MUST be logically centered in the frame.
+2. **PADDING**: Ensure balanced negative space around the product.
+3. **WHOLE OBJECT**: Do not cut off any part of the shoe.
 `;
 
     if (effect === 'studio_minimal_prop') {
@@ -132,7 +137,8 @@ All details = IDENTICAL
 **SCENE: "MINIMALIST LUXURY"**
 - Props: Simple geometric forms (Cube, Sphere)
 - Lighting: Soft, diffused beauty lighting
-- Colors: Neutral tones (Beige, Grey, White)`;
+- Colors: Neutral tones (Beige, Grey, White)
+- **Position**: Place the shoe on a central podium or floor, perfectly centered.`;
     }
 
     if (effect === 'studio_natural_floor') {
@@ -140,7 +146,8 @@ All details = IDENTICAL
 **SCENE: "STREET STYLE"**
 - Background: Concrete, asphalt, or pavement texture
 - Lighting: Hard sunlight with distinct shadows
-- Vibe: Authentic, outdoor, energetic`;
+- Vibe: Authentic, outdoor, energetic
+- **Position**: Shoe placed centrally on the ground surface.`;
     }
 
     if (effect === 'studio_texture_emphasis') {
@@ -148,7 +155,8 @@ All details = IDENTICAL
 **SCENE: "DARK & DRAMATIC"**
 - Background: Dark grey or black matte surface
 - Lighting: Rim lighting to highlight silhouette
-- Vibe: Premium, technical, moody`;
+- Vibe: Premium, technical, moody
+- **Position**: Floating or resting in the exact center of the frame.`;
     }
 
     if (effect === 'studio_cinematic') {
@@ -156,10 +164,11 @@ All details = IDENTICAL
 **SCENE: "NEON CYBERPUNK"**
 - Background: Dark glossy floor with reflections
 - Lighting: Blue or Purple neon rim lights
-- Effects: Subtle mist/fog, levitating slightly`;
+- Effects: Subtle mist/fog, levitating slightly
+- **Position**: Levitating in the center, symmetrical composition.`;
     }
 
-    return `${SYSTEM_ROLE} Photorealistic product shot.`;
+    return `${SYSTEM_ROLE} Photorealistic product shot, centered composition.`;
 };
 
 // ============================================================================

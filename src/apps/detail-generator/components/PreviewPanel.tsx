@@ -1,10 +1,33 @@
-import React, { forwardRef, useCallback } from 'react';
+import React, { forwardRef, useCallback, useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { HeroSection } from './HeroSection';
 import { TextElement } from './PreviewRenderer';
 import SizeGuideSection from './SizeGuideSection';
 import PrecautionsSection from './PrecautionsSection';
 import ASInfoSection from './ASInfoSection';
+import { RegionOverlay, ColorPickerPopup } from './RegionOverlay';
+import {
+    ClothingRegion,
+    detectClothingRegions,
+    changeRegionColor,
+    replaceRegionClothing
+} from '../services/modelSegmentationService';
+import { ModelAnalysis } from '../services/analyzeModel';
+import { FilterPresetName, getFilterStyles } from '../services/photoFilterService';
+
+// Helper Overlay Component
+const FilterOverlay = ({ activeFilter }: { activeFilter?: FilterPresetName; }) => {
+    if (!activeFilter || activeFilter === 'original') return null;
+    const styles = React.useMemo(() => getFilterStyles(activeFilter), [activeFilter]);
+    return (
+        <>
+            <div style={styles.overlayStyle} />
+            <div style={styles.grainStyle} />
+            <div style={styles.glowStyle} />
+        </>
+    );
+};
+
 
 interface PreviewPanelProps {
     data: any;
@@ -54,6 +77,9 @@ interface PreviewPanelProps {
     }>;
     onUpdateLineElement?: (id: string, updates: { x1?: number; y1?: number; x2?: number; y2?: number }) => void;
     onDeleteLineElement?: (id: string) => void;
+    flippedSections?: Set<string>;
+    activeFilter?: FilterPresetName;
+    modelAnalysis?: { [key: string]: ModelAnalysis };
 }
 
 export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
@@ -82,8 +108,13 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
     onUpdateGridCell,
     lineElements = [],
     onUpdateLineElement,
-    onDeleteLineElement
+    onDeleteLineElement,
+    flippedSections = new Set(),
+    activeFilter = 'original',
+    modelAnalysis = {}
 }, ref) => {
+    // Filter Styles Memo
+    const filterStyles = React.useMemo(() => activeFilter !== 'original' ? getFilterStyles(activeFilter) : null, [activeFilter]);
     // 선택된 선 ID 상태
     const [selectedLineId, setSelectedLineId] = React.useState<string | null>(null);
 
@@ -157,7 +188,73 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
         sectionId: string | null;
     }>({ visible: false, x: 0, y: 0, sectionId: null });
 
+    // 의류 부위 감지 상태 (섹션별)
+    const [sectionRegions, setSectionRegions] = useState<{
+        [sectionId: string]: ClothingRegion[];
+    }>({});
+
+    // 색상 변경 팝업 상태
+    const [colorPickerState, setColorPickerState] = useState<{
+        visible: boolean;
+        x: number;
+        y: number;
+        region: ClothingRegion | null;
+        sectionId: string | null;
+    }>({ visible: false, x: 0, y: 0, region: null, sectionId: null });
+
+    // AI 처리 중 상태
+    const [processingRegion, setProcessingRegion] = useState<string | null>(null);
+
+    // 분석 중인 섹션 상태 (애니메이션 표시용)
+    const [analyzingSections, setAnalyzingSections] = useState<Set<string>>(new Set());
+
     const sectionRefs = React.useRef<{ [key: string]: HTMLDivElement | null }>({});
+    const imageTransformsRef = React.useRef(imageTransforms);
+
+    // Keep ref in sync
+    React.useEffect(() => {
+        imageTransformsRef.current = imageTransforms;
+    }, [imageTransforms]);
+
+    // Native Wheel Listener for strict scroll blocking
+    React.useEffect(() => {
+        const cleanupFns: (() => void)[] = [];
+
+        sectionOrder.forEach(sectionKey => {
+            const isGlobalEditOn = isHoldOn;
+            const isSelected = selectedSections?.has(sectionKey) || forceEditSections.has(sectionKey);
+
+            if (isGlobalEditOn || isSelected) {
+                const el = sectionRefs.current[sectionKey];
+                const imgEl = el?.querySelector('img');
+
+                if (imgEl) {
+                    const handler = (e: WheelEvent) => {
+                        // Strict prevention of invalid scrolls
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        if (heldSections.has(sectionKey)) return;
+                        if (!onUpdateImageTransform) return;
+
+                        const currentTransform = imageTransformsRef.current[sectionKey] || { scale: 1, x: 0, y: 0 };
+                        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                        const newScale = Math.max(0.1, Math.min(5.0, currentTransform.scale + delta));
+
+                        onUpdateImageTransform(sectionKey, {
+                            ...currentTransform,
+                            scale: newScale
+                        });
+                    };
+
+                    imgEl.addEventListener('wheel', handler, { passive: false });
+                    cleanupFns.push(() => imgEl.removeEventListener('wheel', handler));
+                }
+            }
+        });
+
+        return () => cleanupFns.forEach(fn => fn());
+    }, [sectionOrder, selectedSections, isHoldOn, forceEditSections, heldSections, onUpdateImageTransform]);
 
     // Close context menu on click outside
     React.useEffect(() => {
@@ -177,12 +274,101 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
             // ESC 키로 선택 해제
             if (e.key === 'Escape') {
                 setSelectedLineId(null);
+                setColorPickerState(prev => ({ ...prev, visible: false }));
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [selectedLineId, onDeleteLineElement]);
+
+    // 모델 홀드 시 세그멘테이션 실행
+    useEffect(() => {
+        const runSegmentation = async () => {
+            for (const sectionId of Array.from(heldSections)) {
+                // 이미 분석한 섹션은 스킵
+                if (sectionRegions[sectionId]) continue;
+
+                // 해당 섹션의 이미지 URL 찾기
+                const imageUrl = data.imageUrls?.[sectionId] ||
+                    data.imageUrls?.[`${sectionId}-0`] ||
+                    (Array.isArray(data.imageUrls?.[sectionId]) ? data.imageUrls[sectionId][0] : null);
+
+                if (imageUrl && typeof imageUrl === 'string') {
+                    // 분석 시작 - 애니메이션 표시
+                    setAnalyzingSections(prev => new Set([...prev, sectionId]));
+
+                    try {
+                        console.log(`🔍 Running segmentation for section: ${sectionId}`);
+                        const result = await detectClothingRegions(imageUrl);
+                        setSectionRegions(prev => ({
+                            ...prev,
+                            [sectionId]: result.regions
+                        }));
+                    } catch (error) {
+                        console.error(`Segmentation failed for ${sectionId}:`, error);
+                    } finally {
+                        // 분석 완료 - 애니메이션 제거
+                        setAnalyzingSections(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(sectionId);
+                            return newSet;
+                        });
+                    }
+                }
+            }
+        };
+
+        if (heldSections.size > 0) {
+            runSegmentation();
+        }
+    }, [heldSections, data.imageUrls]);
+
+    // 부위 색상 변경 핸들러
+    const handleRegionColorChange = useCallback(async (sectionId: string, region: ClothingRegion, color: string) => {
+        const imageUrl = data.imageUrls?.[sectionId];
+        if (!imageUrl) return;
+
+        setProcessingRegion(`${sectionId}-${region.type}`);
+        try {
+            const result = await changeRegionColor(imageUrl, region, color);
+            // Check if result already has data URI prefix
+            const finalImage = result.startsWith('data:') ? result : `data:image/png;base64,${result}`;
+            onAction?.('updateImage', sectionId, 0, finalImage);
+        } catch (error) {
+            console.error('Color change failed:', error);
+            alert('색상 변경에 실패했습니다.');
+        } finally {
+            setProcessingRegion(null);
+        }
+    }, [data.imageUrls, onAction]);
+
+    // 부위 의류 교체 핸들러
+    const handleRegionClothingDrop = useCallback(async (sectionId: string, region: ClothingRegion, file: File) => {
+        const modelImageUrl = data.imageUrls?.[sectionId];
+        if (!modelImageUrl) return;
+
+        setProcessingRegion(`${sectionId}-${region.type}`);
+        try {
+            // File을 base64로 변환
+            const reader = new FileReader();
+            const clothingBase64 = await new Promise<string>((resolve) => {
+                reader.onload = (e) => resolve(e.target?.result as string);
+                reader.readAsDataURL(file);
+            });
+
+            const result = await replaceRegionClothing(modelImageUrl, region, clothingBase64);
+            // Check if result already has data URI prefix
+            const finalImage = result.startsWith('data:') ? result : `data:image/png;base64,${result}`;
+            onAction?.('updateImage', sectionId, 0, finalImage);
+        } catch (error) {
+            console.error('Clothing replacement failed:', error);
+            alert('의류 교체에 실패했습니다.');
+        } finally {
+            setProcessingRegion(null);
+        }
+    }, [data.imageUrls, onAction]);
+
 
     // 선 드래그 이벤트 핸들러
     React.useEffect(() => {
@@ -298,15 +484,19 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
         // Allow if MINIMAP toggle is ON (isHoldOn) OR if this section is selected
         const isGlobalEditOn = isHoldOn;
         const isSelected = selectedSections?.has(sectionId) || forceEditSections.has(sectionId);
+
+        // If selected, ALWAYS prevent default to stop page scroll
+        if (isSelected || isGlobalEditOn) {
+            if (e.cancelable && e.preventDefault) e.preventDefault();
+            e.stopPropagation();
+        }
+
         if (!isGlobalEditOn && !isSelected) return;
 
-        // If Model Hold is active, LOCK movement (return early)
+        // If Model Hold is active, LOCK movement (but we already prevented scroll above)
         if (heldSections.has(sectionId)) return;
 
         if (!onUpdateImageTransform) return;
-
-        // Try to prevent default (might be passive)
-        e.stopPropagation();
 
         const currentTransform = imageTransforms[sectionId] || { scale: 1, x: 0, y: 0 };
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
@@ -806,6 +996,8 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
             {sectionOrder.map((sectionKey) => {
                 // Content Section: Size Guide
                 if (sectionKey === 'size-guide') {
+                    // Hide if panel is collapsed (showSizeGuide === false)
+                    if (data.showSizeGuide === false) return null;
                     return (
                         <div
                             key={sectionKey}
@@ -815,13 +1007,41 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                         >
                             <SizeGuideSection
                                 visible={data.detailTextContent?.sizeGuide?.visible !== false}
-                                productImage={data.productFiles?.[0] ? URL.createObjectURL(data.productFiles[0]) : (Object.values(data.imageUrls || {}).find((url: any) => typeof url === 'string' && url.startsWith('data:')) as string)}
+                                productImage={
+                                    // 1. First try generated sketch image
+                                    data.imageUrls?.['sizeGuide-0'] ||
+                                    // 2. Then try original product file
+                                    (data.productFiles?.[0] ? URL.createObjectURL(data.productFiles[0]) : null) ||
+                                    // 3. Fallback to any existing data URL in imageUrls
+                                    (Object.values(data.imageUrls || {}).find((url: any) => typeof url === 'string' && url.startsWith('data:')) as string) ||
+                                    // 4. Or try hero/products image
+                                    data.imageUrls?.['hero'] ||
+                                    (Array.isArray(data.imageUrls?.['products']) ? data.imageUrls['products'][0] : null)
+                                }
                                 sizeData={{
                                     productSpec: data.heroTextContent?.productSpec,
                                     heightSpec: data.heroTextContent?.heightSpec,
                                     customContent: data.heroTextContent?.sizeGuide,
-                                    specs: data.detailTextContent?.sizeGuide?.specs,
-                                    disclaimer: data.detailTextContent?.sizeGuide?.disclaimer
+                                    specs: {
+                                        length: data.sizeGuideContent?.specLength || '280',
+                                        width: data.sizeGuideContent?.specWidth || '100',
+                                        heel: data.sizeGuideContent?.specHeel || '35'
+                                    },
+                                    disclaimer: data.detailTextContent?.sizeGuide?.disclaimer,
+                                    // Pass live update values from AdjustmentPanel
+                                    sizeLevel: data.sizeGuideContent?.sizeLevel,
+                                    widthLevel: data.sizeGuideContent?.widthLevel,
+                                    weightLevel: data.sizeGuideContent?.weightLevel,
+                                    // Convert mm to cm for display (divide by 10)
+                                    totalLength: data.sizeGuideContent?.specLength
+                                        ? `${(parseInt(data.sizeGuideContent.specLength) / 10).toFixed(1)}cm`
+                                        : (data.heroTextContent?.totalLength || '28cm'),
+                                    totalHeight: data.sizeGuideContent?.specWidth
+                                        ? `${(parseInt(data.sizeGuideContent.specWidth) / 10).toFixed(1)}cm`
+                                        : (data.heroTextContent?.totalHeight || '10cm'),
+                                    heelHeight: data.sizeGuideContent?.specHeel
+                                        ? `${(parseInt(data.sizeGuideContent.specHeel) / 10).toFixed(1)}cm`
+                                        : (data.heroTextContent?.heelHeight || '3.5cm')
                                 }}
                             />
                         </div>
@@ -830,6 +1050,8 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
 
                 // Content Section: A/S Info
                 if (sectionKey === 'as-info') {
+                    // Hide if panel is collapsed (showASInfo === false)
+                    if (data.showASInfo === false) return null;
                     return (
                         <div
                             key={sectionKey}
@@ -837,13 +1059,20 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                             className="section-transition"
                             style={getTransitionStyle()}
                         >
-                            <ASInfoSection visible={true} asData={data.detailTextContent?.asInfo} customContent={data.heroTextContent?.asInfo} />
+                            <ASInfoSection
+                                visible={true}
+                                asData={data.detailTextContent?.asInfo}
+                                customContent={data.aiGeneratedContent?.asInfo}
+                                panelContent={data.asInfoContent}
+                            />
                         </div>
                     );
                 }
 
                 // Content Section: Precautions
                 if (sectionKey === 'precautions') {
+                    // Hide if panel is collapsed (showPrecautions === false)
+                    if (data.showPrecautions === false) return null;
                     return (
                         <div
                             key={sectionKey}
@@ -851,7 +1080,12 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                             className="section-transition"
                             style={getTransitionStyle()}
                         >
-                            <PrecautionsSection visible={true} precautionsData={data.detailTextContent?.precautions} content={data.heroTextContent?.precautions} />
+                            <PrecautionsSection
+                                visible={true}
+                                precautionsData={data.detailTextContent?.precautions}
+                                content={data.aiGeneratedContent?.cautions}
+                                panelContent={data.precautionsContent}
+                            />
                         </div>
                     );
                 }
@@ -867,7 +1101,7 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                             data-section={sectionKey}
                             onContextMenu={(e) => handleContextMenu(e, sectionKey)}
                         >
-                            <HeroSection content={data.heroTextContent} fieldSettings={data.heroFieldSettings} fieldOrder={data.heroFieldOrder} />
+                            <HeroSection content={data.heroTextContent} fieldSettings={data.heroFieldSettings} fieldOrder={data.heroFieldOrder} fontFamily={data.heroFontFamily} />
                             {renderTextElements(sectionKey)}
                             {renderLineElements(sectionKey)}
                         </div>
@@ -958,12 +1192,14 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                                                             src={cellImage}
                                                             alt={`Cell ${cellIdx + 1}`}
                                                             className="w-full h-full object-cover select-none pointer-events-none"
+                                                            draggable={false}
                                                             style={{
                                                                 transform: `scale(${(gridCellTransforms[`${sectionKey}-${cellIdx}`]?.scale || 1)}) translate(${(gridCellTransforms[`${sectionKey}-${cellIdx}`]?.x || 0)}px, ${(gridCellTransforms[`${sectionKey}-${cellIdx}`]?.y || 0)}px)`,
-                                                                transformOrigin: 'center center'
+                                                                transformOrigin: 'center center',
+                                                                ...(filterStyles?.containerStyle || {})
                                                             }}
-                                                            draggable={false}
                                                         />
+                                                        {filterStyles && <FilterOverlay activeFilter={activeFilter} />}
                                                         {/* 리셋 버튼 */}
                                                         <button
                                                             className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full text-[10px] flex items-center justify-center hover:bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1027,7 +1263,8 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                 // Image Transform
                 const transform = imageTransforms?.[sectionKey] || { scale: 1, x: 0, y: 0 };
                 const isHeld = heldSections.has(sectionKey);
-                const isEditable = isHoldOn || forceEditSections.has(sectionKey);
+                const isEditable = isHoldOn || forceEditSections.has(sectionKey) || selectedSections.has(sectionKey);
+                const isFlipped = flippedSections.has(sectionKey);
 
                 return (
                     <div
@@ -1036,17 +1273,18 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                         ref={el => { sectionRefs.current[sectionKey] = el; }}
                         className={`relative group overflow-hidden section-transition ${isHeld ? 'border-4 border-red-500' : ''}`}
                         style={{
+                            height: styleHeight,
                             minHeight: isPlaceholder ? '200px' : 'auto',
                             boxSizing: 'border-box',
                             ...getTransitionStyle()
                         }}
                         onDragOver={handleDragOver}
                         onDrop={(e) => handleDrop(e, sectionKey)}
-                        onClick={() => isPlaceholder && handleClickUpload(sectionKey)}
+                        onClick={() => { /* Click disabled for upload */ }}
                         onContextMenu={(e) => handleContextMenu(e, sectionKey)}
                     >
                         {isPlaceholder ? (
-                            <div className="w-full h-full border-4 border-dashed border-gray-200 flex flex-col items-center justify-center bg-gray-50 hover:border-gray-300 transition-colors cursor-pointer box-border min-h-[200px]">
+                            <div className="w-full h-full border border-gray-100 flex flex-col items-center justify-center bg-white transition-colors box-border min-h-[200px] relative group">
                                 {isLoading ? (
                                     // 로딩 스피너 표시
                                     <div className="flex flex-col items-center justify-center">
@@ -1054,17 +1292,21 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                                         <div className="text-gray-500 font-bold text-lg">이미지 생성 중...</div>
                                         <div className="text-gray-400 text-sm mt-2">잠시만 기다려주세요</div>
                                     </div>
-                                ) : sectionKey.startsWith('spacer-') ? (
-                                    // Minimal placeholder for spacer
-                                    <div className="text-gray-400 font-bold flex flex-col items-center">
-                                        <span>여백 (높이 조절 가능)</span>
-                                        <span className="text-xs font-normal mt-1">이미지 드롭 가능</span>
-                                    </div>
                                 ) : (
+                                    // Empty Canvas State - No click to upload, only Drag & Drop
+                                    // Added resize handle capability by rendering it absolutely at bottom
                                     <>
-                                        <div className="text-6xl mb-6">📷</div>
-                                        <div className="text-gray-500 font-bold text-xl">이미지를 드래그하여 업로드하세요</div>
-                                        <div className="text-gray-400 text-base mt-3">또는 클릭하여 선택</div>
+                                        {/* Optional: Visual hint only on hover or drag over logic in parent */}
+                                        <div className="opacity-0 group-hover:opacity-100 text-gray-300 text-xs pointer-events-none">
+                                            드래그하여 이미지 추가
+                                        </div>
+
+                                        {/* Resize Handle for Empty Section */}
+                                        <div
+                                            className="absolute bottom-0 left-0 right-0 h-4 bg-transparent cursor-ns-resize hover:bg-black/5 transition-colors z-20"
+                                            onMouseDown={(e) => handleResizeMouseDown(e, sectionKey, explicitHeight || 200)}
+                                            style={{ touchAction: 'none' }}
+                                        />
                                     </>
                                 )}
                             </div>
@@ -1077,13 +1319,14 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                                     alt="Section"
                                     className={`w-full h-auto block select-none ${isEditable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'} ${processingSections?.has(sectionKey) ? 'blur-sm' : ''}`}
                                     style={{
-                                        transform: `scale(${transform.scale}) translate(${transform.x}px, ${transform.y}px)`,
+                                        transform: `${isFlipped ? 'scaleX(-1) ' : ''}scale(${transform.scale}) translate(${transform.x}px, ${transform.y}px)`,
                                         transformOrigin: 'center center',
-                                        transition: panningState.sectionId === sectionKey ? 'none' : 'transform 0.1s ease-out'
+                                        transition: panningState.sectionId === sectionKey ? 'none' : 'transform 0.1s ease-out',
+                                        ...(filterStyles?.containerStyle || {})
                                     }}
                                     draggable={false}
                                     onMouseDown={(e) => handleImageMouseDown(e, sectionKey)}
-                                    onWheel={(e) => !isPlaceholder && handleImageWheel(e, sectionKey)}
+                                    /* onWheel removed in favor of native listener */
                                     onLoad={(e) => {
                                         // Auto-calculate section height based on image dimensions
                                         const img = e.currentTarget;
@@ -1094,6 +1337,77 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                                         }
                                     }}
                                 />
+                                {filterStyles && <FilterOverlay activeFilter={activeFilter} />}
+
+                                {/* Processing Overlay */}
+                                {processingSections?.has(sectionKey) && (
+                                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+                                        <div className="px-4 py-2 bg-black/60 rounded-lg text-white font-bold shadow-lg flex items-center gap-2">
+                                            <div className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                                            <span>얼굴을 합성중입니다...</span>
+                                        </div>
+                                    </div>
+                                )}
+
+
+
+                                {/* Face Analysis Overlay (Only in Hold Mode) */}
+                                {isHeld && modelAnalysis?.[sectionKey]?.regions?.map((region, idx) => (
+                                    region.type === 'face' && (
+                                        <div
+                                            key={`face-${idx}`}
+                                            className="absolute border-2 border-green-400 z-30 pointer-events-none shadow-[0_0_10px_rgba(74,222,128,0.5)]"
+                                            style={{
+                                                left: `${((region.x || 0.5) - (region.width || 0) / 2) * 100}%`,
+                                                top: `${((region.y || 0.5) - (region.height || 0) / 2) * 100}%`,
+                                                width: `${(region.width || 0) * 100}%`,
+                                                height: `${(region.height || 0) * 100}%`
+                                            }}
+                                        >
+                                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap flex items-center gap-1">
+                                                <span>FACE DETECTED</span>
+                                                <span className="opacity-75 text-[9px]">{(region.confidence * 100).toFixed(0)}%</span>
+                                            </div>
+                                        </div>
+                                    )
+                                ))}
+
+                                {/* Analyzing Overlay - 분석 중 애니메이션 */}
+                                {analyzingSections.has(sectionKey) && (
+                                    <div className="absolute inset-0 z-50 pointer-events-none overflow-hidden">
+                                        {/* 스캔 라인 애니메이션 */}
+                                        <div
+                                            className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent"
+                                            style={{
+                                                animation: 'scanLine 2s ease-in-out infinite',
+                                                boxShadow: '0 0 20px 10px rgba(34, 211, 238, 0.3)'
+                                            }}
+                                        />
+                                        {/* 반투명 오버레이 */}
+                                        <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
+                                        {/* 분석 중 텍스트 */}
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                            <div className="flex items-center gap-3 bg-black/70 px-6 py-4 rounded-2xl shadow-2xl border border-cyan-400/30">
+                                                <div className="relative">
+                                                    <div className="w-8 h-8 border-3 border-cyan-400/30 rounded-full" />
+                                                    <div className="absolute inset-0 w-8 h-8 border-3 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-cyan-400 font-bold text-lg">🔍 분석 중입니다...</div>
+                                                    <div className="text-white/60 text-xs mt-1">의류 부위를 감지하고 있어요</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <style>{`
+                                            @keyframes scanLine {
+                                                0% { top: 0%; opacity: 0; }
+                                                10% { opacity: 1; }
+                                                90% { opacity: 1; }
+                                                100% { top: 100%; opacity: 0; }
+                                            }
+                                        `}</style>
+                                    </div>
+                                )}
                                 {/* Processing Overlay */}
                                 {processingSections?.has(sectionKey) && (
                                     <div className="absolute inset-0 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center z-30 pointer-events-none">
@@ -1106,6 +1420,34 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                                 {isHeld && !processingSections?.has(sectionKey) && (
                                     <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-md z-20 pointer-events-none">
                                         LOCKED 🔒
+                                    </div>
+                                )}
+                                {/* Region Overlay - 모델 홀드 시 부위별 호버/클릭 인터랙션 */}
+                                {isHeld && sectionRegions[sectionKey] && (
+                                    <RegionOverlay
+                                        regions={sectionRegions[sectionKey]}
+                                        isActive={isHeld}
+                                        containerWidth={sectionRefs.current[sectionKey]?.clientWidth || 400}
+                                        containerHeight={sectionRefs.current[sectionKey]?.clientHeight || 600}
+                                        onRegionRightClick={(region, e) => {
+                                            setColorPickerState({
+                                                visible: true,
+                                                x: e.clientX,
+                                                y: e.clientY,
+                                                region,
+                                                sectionId: sectionKey
+                                            });
+                                        }}
+                                        onRegionDrop={(region, file) => {
+                                            handleRegionClothingDrop(sectionKey, region, file);
+                                        }}
+                                    />
+                                )}
+                                {/* Processing Region Overlay */}
+                                {processingRegion?.startsWith(sectionKey) && (
+                                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center z-40">
+                                        <div className="animate-spin rounded-full h-10 w-10 border-3 border-white border-t-transparent mb-3"></div>
+                                        <div className="text-white text-sm font-semibold">AI 처리 중...</div>
                                     </div>
                                 )}
                             </div>
@@ -1128,6 +1470,20 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                     </div>
                 );
             })}
+
+            {/* 색상 변경 팝업 */}
+            <ColorPickerPopup
+                visible={colorPickerState.visible}
+                x={colorPickerState.x}
+                y={colorPickerState.y}
+                region={colorPickerState.region}
+                onColorSelect={(color) => {
+                    if (colorPickerState.region && colorPickerState.sectionId) {
+                        handleRegionColorChange(colorPickerState.sectionId, colorPickerState.region, color);
+                    }
+                }}
+                onClose={() => setColorPickerState(prev => ({ ...prev, visible: false }))}
+            />
         </div>
     );
 });

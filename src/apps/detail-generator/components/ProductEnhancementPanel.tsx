@@ -5,8 +5,10 @@ const colors = { bgBase: '#F5F5F7', bgSurface: '#FFFFFF', bgSubtle: '#F0F0F4', b
 
 interface ProductEnhancementPanelProps {
     productFiles: File[];
+    previewSections: { id: string; url: string }[];
     onResultsUpdate: (results: ProductEnhancementResult[]) => void;
     onAddSectionWithImage?: (imageUrl: string, sectionName?: string) => void;
+    onUpdatePreview?: (sectionId: string, imageUrl: string) => void;
     lang?: 'ko' | 'en';
 }
 
@@ -18,65 +20,172 @@ const effects: { id: ProductEffect; name: string; fixed?: number }[] = [
     { id: 'studio_cinematic', name: '시네마틱' },
 ];
 
-export default function ProductEnhancementPanel({ productFiles, onResultsUpdate, onAddSectionWithImage }: ProductEnhancementPanelProps) {
+export const ProductEnhancementPanel: React.FC<ProductEnhancementPanelProps> = ({
+    productFiles,
+    previewSections,
+    onResultsUpdate,
+    onAddSectionWithImage,
+    onUpdatePreview,
+    lang = 'ko'
+}) => {
     const [selectedEffect, setSelectedEffect] = useState<ProductEffect>('beautify');
-    const [results, setResults] = useState<ProductEnhancementResult[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [results, setResults] = useState<ProductEnhancementResult[]>([]);
 
-    useEffect(() => {
-        if (onAddSectionWithImage) {
-            results.forEach(result => {
-                if (result.status === 'done' && result.url && !result.addedToPreview) {
-                    onAddSectionWithImage(result.url, result.poseInfo?.name || result.effect);
-                    setResults(prev => prev.map(r => r.id === result.id ? { ...r, addedToPreview: true } : r));
-                }
-            });
-        }
-    }, [results, onAddSectionWithImage]);
+    const urlToFile = async (url: string, filename: string): Promise<File> => {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        return new File([blob], filename, { type: blob.type });
+    };
 
     const handleGenerate = async () => {
-        if (productFiles.length === 0) return;
+        const isBeautify = selectedEffect === 'beautify';
+        const sourceFiles: { file: File, sourceId?: string }[] = [];
+
+        if (isBeautify) {
+            if (productFiles.length === 0) return;
+            productFiles.forEach(file => sourceFiles.push({ file }));
+        } else {
+            // For concepts, use preview images with section IDs
+            if (previewSections && previewSections.length > 0) {
+                for (let i = 0; i < previewSections.length; i++) {
+                    try {
+                        const section = previewSections[i];
+                        const file = await urlToFile(section.url, `preview-image-${i}.png`);
+                        sourceFiles.push({ file, sourceId: section.id });
+                    } catch (e) {
+                        console.error("Failed to convert url to file", e);
+                    }
+                }
+            } else {
+                if (sourceFiles.length === 0) {
+                    alert(lang === 'ko' ? '프리뷰에 적용된 이미지가 없습니다. 먼저 이미지를 프리뷰에 배치해주세요.' : 'No images in preview.');
+                    return;
+                }
+            }
+        }
+
+        if (sourceFiles.length === 0) return;
+
         setIsProcessing(true);
         const newResults: ProductEnhancementResult[] = [];
 
-        if (selectedEffect === 'beautify') {
-            if (onAddSectionWithImage) {
-                for (let i = 0; i < productFiles.length; i++) {
-                    const file = productFiles[i];
-                    const reader = new FileReader();
-                    await new Promise<void>((resolve) => {
-                        reader.onload = (ev) => { const result = ev.target?.result as string; onAddSectionWithImage(result, `원본 ${i + 1}`); resolve(); };
-                        reader.readAsDataURL(file);
-                    });
-                }
-            }
-            const primaryFile = productFiles[0];
+        if (isBeautify) {
             beautifyPoses.forEach(pose => {
-                newResults.push({ id: `${primaryFile.name}-${pose.id}-${Date.now()}-${Math.random()}`, originalFileName: primaryFile.name, status: 'loading', effect: 'beautify', poseInfo: pose, processingStep: '대기 중' });
+                newResults.push({ id: `${pose.id}-${Date.now()}`, originalFileName: 'All Files', status: 'loading', effect: selectedEffect, poseInfo: pose, processingStep: '대기 중' });
             });
-        } else {
-            productFiles.forEach((file, idx) => {
-                newResults.push({ id: `${file.name}-${selectedEffect}-${Date.now()}-${idx}`, originalFileName: file.name, status: 'loading', effect: selectedEffect, processingStep: '대기 중' });
-            });
-        }
 
-        setResults(newResults); onResultsUpdate(newResults);
+            setResults(prev => [...prev, ...newResults]);
+            onResultsUpdate(newResults);
 
-        for (const result of newResults) {
             try {
-                const onProgress = (msg: string) => setResults(prev => prev.map(r => r.id === result.id ? { ...r, processingStep: msg } : r));
-                const filesToProcess = result.effect === 'beautify' ? productFiles : [productFiles.find(f => f.name === result.originalFileName)!];
-                const url = await applyProductEffect(filesToProcess, result.effect, onProgress, result.poseInfo?.id);
-                const updatedResult = { ...result, status: 'done' as const, url, processingStep: '완료' };
-                setResults(prev => { const nr = prev.map(r => r.id === result.id ? updatedResult : r); onResultsUpdate(nr); return nr; });
-            } catch (error: any) {
-                setResults(prev => { const nr = prev.map(r => r.id === result.id ? { ...r, status: 'error' as const, error: error.message, processingStep: '실패' } : r); onResultsUpdate(nr); return nr; });
+                const processPose = async (pose: { id: string; name: string }, resultIndex: number) => {
+                    const resultId = newResults[resultIndex].id;
+                    const updateStatus = (status: 'loading' | 'done' | 'error', url?: string, step?: string) => {
+                        setResults(prev => prev.map(r => r.id === resultId ? { ...r, status, url, processingStep: step } : r));
+                    };
+
+                    try {
+                        updateStatus('loading', undefined, '포즈 분석 및 미화 시작...');
+                        const generatedUrl = await applyProductEffect(
+                            sourceFiles.map(s => s.file),
+                            'beautify',
+                            (msg) => updateStatus('loading', undefined, msg),
+                            pose.id
+                        );
+                        updateStatus('done', generatedUrl, '완료');
+
+                        const finalResult: ProductEnhancementResult = {
+                            id: resultId,
+                            originalFileName: 'All Files',
+                            status: 'done',
+                            effect: 'beautify',
+                            poseInfo: pose,
+                            url: generatedUrl,
+                            processingStep: '완료'
+                        };
+                        onResultsUpdate([finalResult]);
+
+                    } catch (e: any) {
+                        console.error(e);
+                        updateStatus('error', undefined, e.message || 'Error');
+                    }
+                };
+
+                await Promise.all(beautifyPoses.map((pose, idx) => processPose(pose, idx)));
+
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setIsProcessing(false);
+            }
+
+        } else {
+            // Concept Logic
+            sourceFiles.forEach((item, idx) => {
+                newResults.push({
+                    id: `${item.file.name}-${selectedEffect}-${Date.now()}-${idx}`,
+                    originalFileName: item.file.name,
+                    status: 'loading',
+                    effect: selectedEffect,
+                    processingStep: '대기 중'
+                });
+            });
+
+            setResults(prev => [...prev, ...newResults]);
+
+            try {
+                const processItem = async (item: { file: File, sourceId?: string }, resultIndex: number) => {
+                    const resultId = newResults[resultIndex].id;
+                    const updateStatus = (status: 'loading' | 'done' | 'error', url?: string, step?: string) => {
+                        setResults(prev => prev.map(r => r.id === resultId ? { ...r, status, url, processingStep: step } : r));
+                    };
+
+                    try {
+                        const generatedUrl = await applyProductEffect(
+                            [item.file],
+                            selectedEffect,
+                            (msg) => updateStatus('loading', undefined, msg)
+                        );
+                        updateStatus('done', generatedUrl, '완료');
+
+                        // Update Preview Immediately if sourceId exists
+                        if (item.sourceId && onUpdatePreview) {
+                            onUpdatePreview(item.sourceId, generatedUrl);
+                        }
+
+                        // Add to history
+                        const finalResult: ProductEnhancementResult = {
+                            id: resultId,
+                            originalFileName: item.file.name,
+                            status: 'done',
+                            effect: selectedEffect,
+                            url: generatedUrl,
+                            processingStep: '완료',
+                            addedToPreview: true // Auto applied
+                        };
+                        onResultsUpdate([finalResult]);
+
+                    } catch (e: any) {
+                        console.error(e);
+                        updateStatus('error', undefined, e.message);
+                    }
+                };
+
+                await Promise.all(sourceFiles.map((item, idx) => processItem(item, idx)));
+
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setIsProcessing(false);
             }
         }
-        setIsProcessing(false);
     };
 
-    const getGenerationCount = () => selectedEffect === 'beautify' ? 6 : productFiles.length;
+    const getGenerationCount = () => {
+        if (selectedEffect === 'beautify') return 6;
+        return previewSections ? previewSections.length : 0;
+    };
 
     return (
         <div className="space-y-3" style={{ fontFamily: '-apple-system, sans-serif' }}>
@@ -88,15 +197,17 @@ export default function ProductEnhancementPanel({ productFiles, onResultsUpdate,
                         <button key={effect.id} onClick={() => setSelectedEffect(effect.id)}
                             style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, fontSize: 11, fontWeight: 500, background: selectedEffect === effect.id ? colors.accentPrimary : colors.bgSubtle, color: selectedEffect === effect.id ? '#FFF' : colors.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span>{effect.name}</span>
-                            <span style={{ fontSize: 11, color: selectedEffect === effect.id ? 'rgba(255,255,255,0.7)' : colors.textMuted }}>{effect.fixed ? `${effect.fixed}개 고정` : `${productFiles.length}`}</span>
+                            <span style={{ fontSize: 11, color: selectedEffect === effect.id ? 'rgba(255,255,255,0.7)' : colors.textMuted }}>
+                                {effect.fixed ? `${effect.fixed}개 고정` : `${previewSections?.length || 0}`}
+                            </span>
                         </button>
                     ))}
                 </div>
             </div>
 
             {/* Generate Button */}
-            <button onClick={handleGenerate} disabled={isProcessing || productFiles.length === 0}
-                style={{ width: '100%', padding: 12, borderRadius: 8, fontSize: 11, fontWeight: 500, background: (isProcessing || productFiles.length === 0) ? colors.bgSubtle : colors.accentPrimary, color: (isProcessing || productFiles.length === 0) ? colors.textMuted : '#FFF', cursor: (isProcessing || productFiles.length === 0) ? 'not-allowed' : 'pointer' }}>
+            <button onClick={handleGenerate} disabled={isProcessing || (selectedEffect === 'beautify' ? productFiles.length === 0 : (previewSections?.length || 0) === 0)}
+                style={{ width: '100%', padding: 12, borderRadius: 8, fontSize: 11, fontWeight: 500, background: (isProcessing || (selectedEffect === 'beautify' ? productFiles.length === 0 : (previewSections?.length || 0) === 0)) ? colors.bgSubtle : colors.accentPrimary, color: (isProcessing || (selectedEffect === 'beautify' ? productFiles.length === 0 : (previewSections?.length || 0) === 0)) ? colors.textMuted : '#FFF', cursor: (isProcessing || (selectedEffect === 'beautify' ? productFiles.length === 0 : (previewSections?.length || 0) === 0)) ? 'not-allowed' : 'pointer' }}>
                 {isProcessing ? <span className="flex items-center justify-center gap-2"><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>처리 중...</span> : `이미지 ${getGenerationCount()}개 생성`}
             </button>
 
@@ -132,3 +243,5 @@ export default function ProductEnhancementPanel({ productFiles, onResultsUpdate,
         </div>
     );
 }
+
+export default ProductEnhancementPanel;

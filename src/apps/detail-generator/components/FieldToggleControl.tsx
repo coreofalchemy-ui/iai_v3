@@ -36,24 +36,51 @@ export const FieldToggleControl: React.FC<FieldToggleControlProps> = ({
         >
             {/* Header */}
             <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                     {draggable && (
-                        <svg style={{ color: colors.textMuted }} className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                        <svg style={{ color: colors.textMuted }} className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 16 16">
                             <circle cx="4" cy="4" r="1.5" /><circle cx="4" cy="8" r="1.5" /><circle cx="4" cy="12" r="1.5" />
                             <circle cx="8" cy="4" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="8" cy="12" r="1.5" />
                         </svg>
                     )}
-                    <div className="flex items-center gap-1.5 cursor-pointer select-none" onClick={onToggleVisibility}>
-                        {collapsible && <span style={{ color: colors.textMuted, fontSize: 10, transition: 'transform 0.2s' }} className={isVisible ? 'rotate-90' : ''}>▶</span>}
-                        <label style={{ fontSize: 13, fontWeight: 600, color: isVisible ? colors.textPrimary : colors.textMuted, cursor: 'pointer' }}>{label}</label>
-                    </div>
+                    {/* Toggle Switch Button */}
+                    <button
+                        onClick={onToggleVisibility}
+                        className="flex-shrink-0"
+                        style={{
+                            width: 32,
+                            height: 16,
+                            borderRadius: 8,
+                            background: isVisible ? colors.accentPrimary : colors.borderSoft,
+                            position: 'relative',
+                            border: 'none',
+                            cursor: 'pointer',
+                            transition: 'background 0.2s'
+                        }}
+                        title={isVisible ? '숨기기' : '보이기'}
+                    >
+                        <div style={{
+                            position: 'absolute',
+                            top: 2,
+                            left: isVisible ? 18 : 2,
+                            width: 12,
+                            height: 12,
+                            background: '#FFF',
+                            borderRadius: 6,
+                            transition: 'left 0.2s',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
+                        }} />
+                    </button>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: isVisible ? colors.textPrimary : colors.textMuted }}>
+                        {label}
+                    </label>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
                     {!collapsible && showFontControl && isVisible && onFontSizeChange && (
-                        <div className="flex items-center gap-0.5">
-                            <span style={{ fontSize: 7, color: colors.textMuted }}>T</span>
-                            <MinimalSlider value={fontSize} min={10} max={48} onChange={onFontSizeChange} className="w-28" />
-                            <span style={{ fontSize: 9, color: colors.textMuted, width: 16, textAlign: 'right' }}>{fontSize}</span>
+                        <div className="flex items-center gap-1">
+                            <span style={{ fontSize: 9, color: colors.textMuted }}>T</span>
+                            <MinimalSlider value={fontSize} min={10} max={48} onChange={onFontSizeChange} className="w-20" />
+                            <span style={{ fontSize: 9, color: colors.textMuted, width: 18, textAlign: 'right' }}>{fontSize}</span>
                         </div>
                     )}
                 </div>

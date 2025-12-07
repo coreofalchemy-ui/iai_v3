@@ -14,5 +14,9 @@ echo    - Frontend App (Port 5173)
 echo.
 echo [IMPORTANT] Please wait for the browser to open...
 echo.
-call npm run dev:full
+echo 3. Starting Backend...
+start "AI Backend (Port 3001)" /MIN node server.js
+
+echo 4. Starting Frontend...
+start "AI Frontend (Port 5173)" /MIN npm run dev
 pause

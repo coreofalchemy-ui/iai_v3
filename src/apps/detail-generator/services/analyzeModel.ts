@@ -6,7 +6,7 @@
 import { callGeminiSecure, urlToBase64 } from '../../../lib/geminiClient';
 
 export interface ClothingRegion {
-    type: 'face' | 'hat' | 'glasses' | 'top' | 'inner' | 'bottom' | 'shoes';
+    type: 'face' | 'hat' | 'glasses' | 'top' | 'inner' | 'bottom' | 'shoes' | 'skirt' | 'pants' | 'socks';
     bbox: { x: number; y: number; width: number; height: number };
     x: number;
     y: number;

@@ -6,6 +6,7 @@ type Props = {
     visible: boolean;
     isSelected?: boolean;
     isHeld?: boolean;
+    isFlipped?: boolean;
     onToggleSelect?: () => void;
     onToggleHold?: () => void;
     onDelete?: () => void;
@@ -15,6 +16,9 @@ type Props = {
     onChangeColor?: () => void;
     onUndo?: () => void;
     canUndo?: boolean;
+    onFlipHorizontal?: () => void;
+    hasImage?: boolean;
+    onDownload?: () => void;
 };
 
 export const SimpleContextMenu: React.FC<Props> = ({
@@ -23,6 +27,7 @@ export const SimpleContextMenu: React.FC<Props> = ({
     visible,
     isSelected,
     isHeld,
+    isFlipped,
     onToggleSelect,
     onToggleHold,
     onDelete,
@@ -32,12 +37,21 @@ export const SimpleContextMenu: React.FC<Props> = ({
     onChangeColor,
     onUndo,
     canUndo,
+    onFlipHorizontal,
+    hasImage,
+    onDownload,
 }) => {
     if (!visible) return null;
 
+    // 공통 스타일
+    const menuItemBase = "w-full text-left px-4 py-2.5 flex items-center gap-3 text-[13px] font-medium transition-colors";
+    const iconStyle = "w-4 h-4 flex items-center justify-center text-[14px] opacity-70";
+    const labelStyle = "flex-1";
+    const badgeStyle = "text-[10px] px-1.5 py-0.5 rounded";
+
     return (
         <div
-            className="fixed z-[99999] min-w-[180px] rounded-xl border border-slate-200 bg-white shadow-2xl text-sm py-1"
+            className="fixed z-[99999] min-w-[200px] rounded-lg border border-[#333] bg-[#1a1a1a] shadow-2xl py-1"
             style={{ top: y, left: x }}
             onContextMenu={(e) => {
                 e.preventDefault();
@@ -47,98 +61,107 @@ export const SimpleContextMenu: React.FC<Props> = ({
                 e.stopPropagation();
             }}
         >
-            {/* Model Hold Button - At the very top */}
+            {/* Model Hold Button */}
             {onToggleHold && (
                 <button
-                    className={`w-full text-left px-4 py-2.5 font-semibold flex items-center gap-2 border-b border-gray-100 ${isHeld
-                        ? 'bg-red-50 text-red-700 hover:bg-red-100'
-                        : 'hover:bg-orange-50 text-orange-600'
+                    className={`${menuItemBase} border-b border-[#333] ${isHeld
+                        ? 'bg-[#2a2020] text-[#ff6b6b] hover:bg-[#352525]'
+                        : 'text-[#ccc] hover:bg-[#252525]'
                         }`}
                     onClick={(e) => {
                         e.stopPropagation();
                         onToggleHold();
                     }}
                 >
-                    <span>{isHeld ? '🔓' : '🔒'}</span>
-                    <span>{isHeld ? '모델 홀드 해제' : '모델 홀드'}</span>
-                    {isHeld && <span className="ml-auto text-xs text-red-500">LOCKED</span>}
+                    <span className={iconStyle}>{isHeld ? '◎' : '◉'}</span>
+                    <span className={labelStyle}>{isHeld ? '모델 홀드 해제' : '모델 홀드'}</span>
+                    {isHeld && <span className={`${badgeStyle} bg-[#ff6b6b20] text-[#ff6b6b]`}>LOCKED</span>}
                 </button>
             )}
+
             {/* Section Selection Button */}
             {onToggleSelect && (
                 <button
-                    className={`w-full text-left px-4 py-2.5 font-semibold flex items-center gap-2 border-b border-gray-100 ${isSelected
-                        ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                        : 'hover:bg-gray-50 text-gray-700'
+                    className={`${menuItemBase} border-b border-[#333] ${isSelected
+                        ? 'bg-[#1a2a1a] text-[#6bff6b] hover:bg-[#253525]'
+                        : 'text-[#ccc] hover:bg-[#252525]'
                         }`}
                     onClick={(e) => {
                         e.stopPropagation();
                         onToggleSelect();
                     }}
                 >
-                    <span>{isSelected ? '✅' : '☑️'}</span>
-                    <span>{isSelected ? '사진해제' : '사진선택'}</span>
-                    {isSelected && <span className="ml-auto text-xs text-green-500">편집 가능</span>}
+                    <span className={iconStyle}>{isSelected ? '✓' : '○'}</span>
+                    <span className={labelStyle}>{isSelected ? '사진해제' : '사진선택'}</span>
                 </button>
             )}
-            {/* Pose Generation Buttons */}
+
+            {/* Pose Generation */}
             {onGeneratePose && (
                 <button
-                    className="w-full text-left px-4 py-2.5 hover:bg-purple-50 text-purple-600 font-semibold flex items-center gap-2 border-b border-gray-100"
+                    className={`${menuItemBase} border-b border-[#333] text-[#ccc] hover:bg-[#252525]`}
                     onClick={(e) => {
                         e.stopPropagation();
                         onGeneratePose();
                     }}
                 >
-                    <span>🧍</span>
-                    <span>자세생성</span>
-                    <span className="ml-auto text-xs text-purple-400">Full Body</span>
+                    <span className={iconStyle}>⧉</span>
+                    <span className={labelStyle}>자세생성</span>
+                    <span className={`${badgeStyle} bg-[#ffffff10] text-[#888]`}>Full</span>
                 </button>
             )}
+
+            {/* Close Up Generation */}
             {onGenerateCloseUp && (
                 <button
-                    className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 text-indigo-600 font-semibold flex items-center gap-2 border-b border-gray-100"
+                    className={`${menuItemBase} border-b border-[#333] text-[#ccc] hover:bg-[#252525]`}
                     onClick={(e) => {
                         e.stopPropagation();
                         onGenerateCloseUp();
                     }}
                 >
-                    <span>👠</span>
-                    <span>클로즈생성</span>
-                    <span className="ml-auto text-xs text-indigo-400">Lower Body</span>
+                    <span className={iconStyle}>⌘</span>
+                    <span className={labelStyle}>클로즈생성</span>
+                    <span className={`${badgeStyle} bg-[#ffffff10] text-[#888]`}>Lower</span>
                 </button>
             )}
+
+            {/* Shoe Regeneration */}
             {onWearShoes && (
                 <button
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-gray-800 font-semibold flex items-center gap-2 border-b border-gray-100"
+                    className={`${menuItemBase} border-b border-[#333] text-[#ccc] hover:bg-[#252525]`}
                     onClick={(e) => {
                         e.stopPropagation();
                         onWearShoes();
                     }}
                 >
-                    <span>👟</span>
-                    <span>신발 착용 (AI)</span>
+                    <span className={iconStyle}>◇</span>
+                    <span className={labelStyle}>신발 재생성</span>
+                    <span className={`${badgeStyle} bg-[#ffffff10] text-[#888]`}>AI</span>
                 </button>
             )}
+
+            {/* Change Color */}
             {onChangeColor && (
                 <button
-                    className="w-full text-left px-4 py-2.5 hover:bg-pink-50 text-pink-600 font-semibold flex items-center gap-2 border-b border-gray-100"
+                    className={`${menuItemBase} border-b border-[#333] text-[#ccc] hover:bg-[#252525]`}
                     onClick={(e) => {
                         e.stopPropagation();
                         onChangeColor();
                     }}
                 >
-                    <span>🎨</span>
-                    <span>색상 변경</span>
-                    <span className="ml-auto text-xs text-pink-400">AI Color</span>
+                    <span className={iconStyle}>◐</span>
+                    <span className={labelStyle}>색상 변경</span>
+                    <span className={`${badgeStyle} bg-[#ffffff10] text-[#888]`}>AI</span>
                 </button>
             )}
-            {/* Undo Button - 되돌리기 */}
+
+            {/* Undo */}
             {onUndo && (
                 <button
-                    className={`w-full text-left px-4 py-2.5 font-semibold flex items-center gap-2 border-b border-gray-100 ${canUndo
-                        ? 'hover:bg-yellow-50 text-yellow-600'
-                        : 'opacity-50 cursor-not-allowed text-gray-400'
+                    className={`${menuItemBase} border-b border-[#333] ${canUndo
+                        ? 'text-[#ccc] hover:bg-[#252525]'
+                        : 'text-[#555] cursor-not-allowed'
                         }`}
                     onClick={(e) => {
                         e.stopPropagation();
@@ -146,24 +169,57 @@ export const SimpleContextMenu: React.FC<Props> = ({
                     }}
                     disabled={!canUndo}
                 >
-                    <span>↩️</span>
-                    <span>되돌리기</span>
-                    {!canUndo && <span className="ml-auto text-xs text-gray-400">없음</span>}
+                    <span className={iconStyle}>↺</span>
+                    <span className={labelStyle}>되돌리기</span>
+                    {!canUndo && <span className={`${badgeStyle} text-[#555]`}>없음</span>}
                 </button>
             )}
+
+            {/* Flip Horizontal */}
+            {onFlipHorizontal && hasImage && (
+                <button
+                    className={`${menuItemBase} border-b border-[#333] ${isFlipped
+                        ? 'bg-[#1a2a2a] text-[#6bf] hover:bg-[#253535]'
+                        : 'text-[#ccc] hover:bg-[#252525]'
+                        }`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onFlipHorizontal();
+                    }}
+                >
+                    <span className={iconStyle}>⇋</span>
+                    <span className={labelStyle}>좌우반전</span>
+                    {isFlipped && <span className={`${badgeStyle} bg-[#6bf20] text-[#6bf]`}>ON</span>}
+                </button>
+            )}
+
+            {/* Download */}
+            {onDownload && hasImage && (
+                <button
+                    className={`${menuItemBase} border-b border-[#333] text-[#ccc] hover:bg-[#252525]`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onDownload();
+                    }}
+                >
+                    <span className={iconStyle}>⬇</span>
+                    <span className={labelStyle}>다운로드</span>
+                </button>
+            )}
+
+            {/* Delete */}
             {onDelete && (
                 <button
-                    className="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 font-semibold flex items-center gap-2"
+                    className={`${menuItemBase} text-[#ff6b6b] hover:bg-[#2a2020]`}
                     onClick={(e) => {
                         e.stopPropagation();
                         onDelete();
                     }}
                 >
-                    <span>🗑️</span>
-                    <span>삭제</span>
+                    <span className={iconStyle}>✕</span>
+                    <span className={labelStyle}>삭제</span>
                 </button>
             )}
         </div>
     );
 };
-

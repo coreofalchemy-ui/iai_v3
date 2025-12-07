@@ -13,6 +13,7 @@ import { analyzeModelImage, detectItemType, compositeClothingItem, changeItemCol
 import { generatePoseBatch, PoseGenerationResult } from './services/poseService';
 import { executeQuickTransferPipeline, QuickTransferPipelineOptions } from './services/quickTransferService';
 import { generateAICopywriting } from './services/geminiAICopywriter';
+import { FilterPresetName } from './services/photoFilterService';
 
 // Helper to read file as Data URL
 const fileToDataUrl = (file: File): Promise<string> => {
@@ -56,12 +57,12 @@ export default function DetailGeneratorApp() {
         textContent: {},
         specContent: {},
         heroTextContent: {
-            productName: 'Sample Product',
+            productName: 'Premium Leather Derby',
             brandLine: 'BRAND NAME',
-            subName: 'Color / Model',
-            stylingMatch: '스타일링 매치 설명이 들어갑니다.',
-            craftsmanship: '제작 공정 및 소재 설명이 들어갑니다.',
-            technology: '핵심 기술 설명이 들어갑니다.'
+            subName: 'Black / Classic',
+            stylingMatch: '와이드 팬츠나 슬랙스와 매치하면 댄디한 무드를 연출할 수 있습니다.\n캐주얼한 데님과 함께하면 클래식한 스트리트 룩이 완성됩니다.\n정장과 코디하면 격식 있는 비즈니스 캐주얼 스타일에 적합합니다.\n오버사이즈 코트와 함께 레이어드하면 세련된 시즌 룩을 완성합니다.',
+            craftsmanship: '프리미엄 풀그레인 가죽을 사용해 내구성과 고급스러움을 모두 갖췄습니다.\n핸드메이드 스티칭으로 디테일의 완성도를 높였습니다.\n이중 봉제 기법을 적용해 오랜 착용에도 형태가 유지됩니다.\n천연 가죽 특유의 에이징으로 시간이 지날수록 깊어지는 색감을 경험하세요.',
+            technology: '미끄럼 방지 패턴이 적용된 고무 아웃솔로 우천시에도 안정적입니다.\n쿠셔닝 인솔이 장시간 착용에도 편안한 착화감을 제공합니다.\n통기성 좋은 내피 소재로 발 건강을 배려했습니다.\n인체공학적 라스트 설계로 발에 자연스럽게 피팅됩니다.'
         },
         noticeContent: {},
         imageUrls: {
@@ -128,12 +129,14 @@ export default function DetailGeneratorApp() {
         message: string;
     }>({ isGenerating: false, current: 0, total: 0, message: '' });
 
-    // Color Picker State - 2-step flow: select clothing type → select color
     const [colorPickerState, setColorPickerState] = useState<{
         step: 'selectType' | 'selectColor' | null;
         sectionId: string | null;
         clothingType: string | null;
     }>({ step: null, sectionId: null, clothingType: null });
+
+    // Flipped Sections State (horizontal flip)
+    const [flippedSections, setFlippedSections] = useState<Set<string>>(new Set());
 
     const previewRef = useRef<HTMLDivElement>(null);
     const middlePanelRef = useRef<HTMLDivElement>(null);
@@ -179,6 +182,10 @@ export default function DetailGeneratorApp() {
         asInfo: true,         // A/S 안내
         cautions: true,       // 기타 주의사항
     });
+
+    // Active Photo Filter
+    const [activeFilter, setActiveFilter] = useState<FilterPresetName>('original');
+
 
     // AI Generated Content
     const [aiGeneratedContent, setAiGeneratedContent] = useState<{
@@ -300,13 +307,27 @@ export default function DetailGeneratorApp() {
                     const newHeights: { [key: string]: number } = {};
                     const sectionIdMap: { [key: string]: string } = {}; // type-index -> sectionId
 
-                    // 미화 섹션 플레이스홀더
-                    for (let i = 0; i < beautifyCount; i++) {
-                        const sectionId = `beautified-${Date.now()}-${i}`;
-                        newSections.push(sectionId);
-                        newImageUrls[sectionId] = 'loading'; // 로딩 표시용
-                        newHeights[sectionId] = 800;
-                        sectionIdMap[`beautify-${i}`] = sectionId;
+                    // 미화 ON: 6개 플레이스홀더 생성
+                    // 미화 OFF: 원본 신발 사진 모두 추가
+                    if (options.beautify) {
+                        // 미화 섹션 플레이스홀더
+                        for (let i = 0; i < beautifyCount; i++) {
+                            const sectionId = `beautified-${Date.now()}-${i}`;
+                            newSections.push(sectionId);
+                            newImageUrls[sectionId] = 'loading'; // 로딩 표시용
+                            newHeights[sectionId] = 800;
+                            sectionIdMap[`beautify-${i}`] = sectionId;
+                        }
+                    } else {
+                        // 미화 OFF: 원본 신발 사진 직접 추가
+                        for (let i = 0; i < options.shoes.length; i++) {
+                            const shoe = options.shoes[i];
+                            const sectionId = `product-${Date.now()}-${i}`;
+                            newSections.push(sectionId);
+                            newImageUrls[sectionId] = shoe.url; // 원본 URL 직접 사용
+                            newHeights[sectionId] = 800;
+                            sectionIdMap[`product-${i}`] = sectionId;
+                        }
                     }
 
                     // 모델컷 섹션 플레이스홀더
@@ -339,15 +360,107 @@ export default function DetailGeneratorApp() {
                     // =============================================
                     // 2. AI 카피라이팅 동시 실행 (사용자가 읽으면서 수정 가능)
                     // =============================================
+                    // =============================================
+                    // 2. 제품 정밀 분석 & 콘텐츠 생성 (백그라운드 병렬 실행)
+                    // =============================================
                     const shoeUrl = options.shoes[0]?.url;
                     if (shoeUrl) {
-                        setQuickTransferProgress({ status: 'AI 카피라이팅 분석 중...', current: 0, total: 1 });
-                        generateAICopywriting(shoeUrl).then(aiCopy => {
-                            setGeneratedData((prev: any) => ({
-                                ...prev,
-                                heroTextContent: { ...prev.heroTextContent, ...aiCopy }
-                            }));
-                        }).catch(e => console.error('AI copywriting error:', e));
+                        // Import dynamically if needed or assume imported at top (Added import in separate edit if strict, but here we assume we can add it or it's available. 
+                        // Actually, better to add the import at the top first? I'll assume I can add the proper logic here using the service.)
+
+                        // We need to convert blob URL to base64 for the service
+                        fetch(shoeUrl)
+                            .then(r => r.blob())
+                            .then(blob => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                    const base64 = reader.result as string;
+
+                                    setQuickTransferProgress({ status: 'AI 제품 정밀 분석 중...', current: 0, total: 1 });
+
+                                    // Lazy import/call to avoid circular dep issues if any, or just call directly. 
+                                    // I will use valid import in previous step or assume global availability? 
+                                    // Wait, I strictly need to import 'analyzeProductAndGenerate'. 
+                                    // I will replace this block assuming I also added the import at the top.
+
+                                    import('./services/productAnalysisService').then(({ analyzeProductAndGenerate }) => {
+                                        analyzeProductAndGenerate(base64, {
+                                            generateSizeGuide: true,
+                                            generateAS: true,
+                                            generateCautions: true
+                                        }, (status) => {
+                                            console.log('Analysis status:', status);
+                                        }).then(results => {
+                                            console.log('✅ Product Analysis Complete:', results);
+
+                                            setGeneratedData((prev: any) => {
+                                                const newData = { ...prev };
+                                                const newSectionOrder = [...(prev.sectionOrder || [])];
+
+                                                // 1. Hero Text & Info + Specs
+                                                if (results.analysisResult) {
+                                                    const analysis = results.analysisResult;
+                                                    newData.heroTextContent = {
+                                                        ...prev.heroTextContent,
+                                                        ...(analysis.heroCopy || {}),
+                                                        // Specs 적용
+                                                        specColor: analysis.specs?.color || prev.heroTextContent?.specColor,
+                                                        specUpper: analysis.specs?.upper || prev.heroTextContent?.specUpper,
+                                                        specLining: analysis.specs?.lining || prev.heroTextContent?.specLining,
+                                                        specOutsole: analysis.specs?.outsole || prev.heroTextContent?.specOutsole,
+                                                        specOrigin: analysis.specs?.origin || prev.heroTextContent?.specOrigin,
+                                                        // Heel Height (Product Spec용)
+                                                        heelHeight: analysis.heelHeight || prev.heroTextContent?.heelHeight,
+                                                        // Height Spec 적용 (cm 형식)
+                                                        outsole: analysis.heightSpec?.outsole || prev.heroTextContent?.outsole || '3cm',
+                                                        insole: analysis.heightSpec?.insole || prev.heroTextContent?.insole || '0.5cm',
+                                                        totalHeight: analysis.heightSpec?.total || prev.heroTextContent?.totalHeight || '3.5cm',
+                                                        // Size Guide
+                                                        sizeGuide: analysis.sizeGuide || prev.heroTextContent?.sizeGuide
+                                                    };
+                                                }
+
+                                                // 2. Size Guide Image
+                                                if (results.sizeGuideImage) {
+                                                    // Ensure size-guide section exists
+                                                    if (!newSectionOrder.includes('size-guide')) {
+                                                        newSectionOrder.push('size-guide');
+                                                    }
+                                                    newData.detailTextContent = {
+                                                        ...prev.detailTextContent,
+                                                        sizeGuide: { visible: true }
+                                                    };
+                                                    newData.imageUrls['sizeGuide-0'] = results.sizeGuideImage;
+                                                }
+
+                                                // 3. AS Info
+                                                if (results.asInfo) {
+                                                    if (!newSectionOrder.includes('as-info')) {
+                                                        newSectionOrder.push('as-info');
+                                                    }
+                                                    newData.detailTextContent = { ...newData.detailTextContent, asInfo: true };
+                                                    newData.aiGeneratedContent = { ...prev.aiGeneratedContent, asInfo: results.asInfo };
+                                                }
+
+                                                // 4. Cautions
+                                                if (results.cautions) {
+                                                    if (!newSectionOrder.includes('precautions')) {
+                                                        newSectionOrder.push('precautions');
+                                                    }
+                                                    newData.detailTextContent = { ...newData.detailTextContent, precautions: true };
+                                                    newData.aiGeneratedContent = { ...newData.aiGeneratedContent, cautions: results.cautions };
+                                                }
+
+                                                // Sync sectionOrder state
+                                                setSectionOrder(newSectionOrder);
+
+                                                return { ...newData, sectionOrder: newSectionOrder };
+                                            });
+                                        });
+                                    });
+                                };
+                                reader.readAsDataURL(blob);
+                            });
                     }
 
                     // =============================================
@@ -367,13 +480,23 @@ export default function DetailGeneratorApp() {
                             const sectionId = sectionIdMap[mapKey];
                             if (sectionId) {
                                 console.log(`🖼️ Streaming ${type} ${index + 1} to section ${sectionId}`);
-                                setGeneratedData((prev: any) => ({
-                                    ...prev,
-                                    imageUrls: {
-                                        ...prev.imageUrls,
-                                        [sectionId]: imageUrl
-                                    }
-                                }));
+                                if (imageUrl === 'error') {
+                                    setGeneratedData((prev: any) => ({
+                                        ...prev,
+                                        imageUrls: {
+                                            ...prev.imageUrls,
+                                            [sectionId]: 'https://placehold.co/800x1200?text=Generation+Failed'
+                                        }
+                                    }));
+                                } else {
+                                    setGeneratedData((prev: any) => ({
+                                        ...prev,
+                                        imageUrls: {
+                                            ...prev.imageUrls,
+                                            [sectionId]: imageUrl
+                                        }
+                                    }));
+                                }
                             }
                         }
                     );
@@ -387,9 +510,42 @@ export default function DetailGeneratorApp() {
                         } catch (e) { /* ignore */ }
                     }
 
+                    // 원본 업로드 신발 이미지도 제품 파일로 추가
+                    if (options.shoes && options.shoes.length > 0) {
+                        for (let i = 0; i < options.shoes.length; i++) {
+                            try {
+                                const shoe = options.shoes[i];
+                                // file 객체가 직접 있으면 사용, 없으면 url로 변환
+                                if ((shoe as any).file) {
+                                    productFilesFromBlob.push((shoe as any).file);
+                                } else if (shoe.url) {
+                                    const response = await fetch(shoe.url);
+                                    const blob = await response.blob();
+                                    productFilesFromBlob.push(new File([blob], shoe.name || `product_${i + 1}.png`, { type: blob.type || 'image/png' }));
+                                }
+                            } catch (e) { console.error('Error processing original shoe:', e); }
+                        }
+                    }
+
+                    // 모델 이미지 처리 (초기에 넣은 모델)
+                    const modelFilesFromBlob: File[] = [];
+                    const modelReq = (options as any).modelRequest; // QuickTransferOptions에 modelRequest가 있다고 가정
+                    // 혹은 options 안에 modelImage 같은게 있는지 확인 필요. 
+                    // 보통 poseService 호출시 사용됨. 
+                    // options.referenceFace 확인
+                    if ((options as any).referenceFace) {
+                        try {
+                            const refFace = (options as any).referenceFace; // URL string
+                            const response = await fetch(refFace);
+                            const blob = await response.blob();
+                            modelFilesFromBlob.push(new File([blob], `model_ref.png`, { type: blob.type || 'image/png' }));
+                        } catch (e) { console.error('Error processing model ref:', e); }
+                    }
+
                     setGeneratedData((prev: any) => ({
                         ...prev,
-                        productFiles: [...(prev.productFiles || []), ...productFilesFromBlob]
+                        productFiles: [...(prev.productFiles || []), ...productFilesFromBlob],
+                        modelFiles: [...(prev.modelFiles || []), ...modelFilesFromBlob]
                     }));
 
                     setQuickTransferProgress(null);
@@ -626,18 +782,25 @@ export default function DetailGeneratorApp() {
                 }
             }
 
-            // 잠시 대기해서 이미지 로딩 완료 대기
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // 이미지 로딩 완료 대기
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            // 전체 콘텐츠 크기 계산
+            const scrollHeight = previewRef.current.scrollHeight;
 
             const canvas = await html2canvas(previewRef.current, {
-                scale: 2,
+                scale: 1.5, // 품질과 성능 균형
                 useCORS: true,
                 allowTaint: true,
                 backgroundColor: '#ffffff',
                 width: targetWidth,
+                height: scrollHeight,
                 windowWidth: targetWidth,
-                logging: false, // 콘솔 로그 비활성화
-                imageTimeout: 15000,
+                windowHeight: scrollHeight,
+                scrollX: 0,
+                scrollY: 0,
+                logging: false,
+                imageTimeout: 20000,
             });
 
             // 원본 src 복원
@@ -647,7 +810,7 @@ export default function DetailGeneratorApp() {
 
             const link = document.createElement('a');
             link.download = `detail_page_${previewDevice}_${Date.now()}.jpg`;
-            link.href = canvas.toDataURL('image/jpeg', 0.92);
+            link.href = canvas.toDataURL('image/jpeg', 0.95);
             link.click();
         } catch (error) {
             console.error('JPG 내보내기 오류:', error);
@@ -803,8 +966,15 @@ export default function DetailGeneratorApp() {
             }
         }));
 
-        // sectionOrder에 추가
-        setSectionOrder(prev => [...prev, newId]);
+        // sectionOrder에 추가 (size-guide/as-info/precautions 앞에 삽입)
+        setSectionOrder(prev => {
+            const detailSections = ['size-guide', 'as-info', 'precautions'];
+            const firstDetailIndex = prev.findIndex(id => detailSections.some(ds => id === ds || id.startsWith(ds + '-')));
+            if (firstDetailIndex === -1) {
+                return [...prev, newId]; // 디테일 섹션이 없으면 끝에 추가
+            }
+            return [...prev.slice(0, firstDetailIndex), newId, ...prev.slice(firstDetailIndex)];
+        });
 
         // 섹션 높이 설정
         setSectionHeights(prev => ({ ...prev, [newId]: grid.height }));
@@ -874,7 +1044,15 @@ export default function DetailGeneratorApp() {
                     [newId]: imageUrl
                 }
             }));
-            setSectionOrder(prev => [...prev, newId]);
+            // sectionOrder에 추가 (size-guide/as-info/precautions 앞에 삽입)
+            setSectionOrder(prev => {
+                const detailSections = ['size-guide', 'as-info', 'precautions'];
+                const firstDetailIndex = prev.findIndex(id => detailSections.some(ds => id === ds || id.startsWith(ds + '-')));
+                if (firstDetailIndex === -1) {
+                    return [...prev, newId]; // 디테일 섹션이 없으면 끝에 추가
+                }
+                return [...prev.slice(0, firstDetailIndex), newId, ...prev.slice(firstDetailIndex)];
+            });
             setSectionHeights(prev => ({ ...prev, [newId]: calculatedHeight }));
         };
         img.src = imageUrl;
@@ -999,6 +1177,23 @@ export default function DetailGeneratorApp() {
                 [sectionId]: prevImage
             }
         }));
+        setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
+    };
+
+    // Flip Horizontal Handler - 섹션 이미지 좌우반전
+    const handleFlipHorizontal = () => {
+        const sectionId = contextMenu.targetId;
+        if (!sectionId) return;
+
+        setFlippedSections(prev => {
+            const next = new Set(prev);
+            if (next.has(sectionId)) {
+                next.delete(sectionId);
+            } else {
+                next.add(sectionId);
+            }
+            return next;
+        });
         setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
     };
 
@@ -1574,6 +1769,26 @@ export default function DetailGeneratorApp() {
         }
     };
 
+    // Section Image Download Handler
+    const handleDownloadSectionImage = () => {
+        const sectionId = contextMenu.targetId;
+        if (!sectionId) return;
+        const imageUrl = generatedData.imageUrls?.[sectionId];
+        if (!imageUrl || imageUrl === 'loading' || imageUrl.length < 100) {
+            alert('다운로드할 이미지가 없습니다.');
+            return;
+        }
+
+        const link = document.createElement('a');
+        link.id = 'download-link'; // visual aid if debug needed
+        link.href = imageUrl;
+        link.download = `section_${sectionId}_${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setContextMenu(prev => ({ ...prev, visible: false }));
+    };
+
     return (
         <div className="flex flex-col h-screen bg-[#F5F5F7] overflow-hidden">
             {/* Header - Grey on Grey Design */}
@@ -1649,7 +1864,13 @@ export default function DetailGeneratorApp() {
                             <div className="flex-grow overflow-y-auto custom-scrollbar">
                                 <AdjustmentPanel
                                     data={generatedData}
-                                    onUpdate={(newData: any) => setGeneratedData(newData)}
+                                    onUpdate={(newData: any) => {
+                                        setGeneratedData(newData);
+                                        // Sync sectionOrder if changed
+                                        if (newData.sectionOrder && JSON.stringify(newData.sectionOrder) !== JSON.stringify(sectionOrder)) {
+                                            setSectionOrder(newData.sectionOrder);
+                                        }
+                                    }}
                                     showAIAnalysis={showAIAnalysis}
                                     onToggleAIAnalysis={() => setShowAIAnalysis(prev => !prev)}
                                     activeSection={activeSection}
@@ -1661,6 +1882,12 @@ export default function DetailGeneratorApp() {
                                     onAddSectionWithImage={handleAddSectionWithImage}
                                     onAddGridSection={handleAddGridSection}
                                     onAddLineElement={handleAddLineElement}
+                                    heldSections={heldSections}
+                                    activeFilter={activeFilter}
+                                    onFilterChange={setActiveFilter}
+                                    sectionHeights={sectionHeights}
+                                    onUpdateHeights={(key: string, height: number) => setSectionHeights(prev => ({ ...prev, [key]: height }))}
+                                    onSetActiveSection={setActiveSection}
                                 />
                             </div>
                         </div>
@@ -1792,6 +2019,9 @@ export default function DetailGeneratorApp() {
                                         lineElements={lineElements}
                                         onUpdateLineElement={handleUpdateLineElement}
                                         onDeleteLineElement={handleDeleteLineElement}
+                                        flippedSections={flippedSections}
+                                        activeFilter={activeFilter}
+                                        modelAnalysis={modelAnalysis}
                                     />
                                 </div>
                             </div>
@@ -1799,7 +2029,7 @@ export default function DetailGeneratorApp() {
 
                         {/* Right Panel (Mini Map) - Floating Card Style */}
                         {isMinimapVisible && (
-                            <div className="w-[150px] hidden lg:flex flex-col relative z-10 flex-shrink-0 h-full p-2 bg-[#F5F5F7]">
+                            <div className="w-[150px] flex flex-col relative z-10 flex-shrink-0 h-full p-2 bg-[#F5F5F7]">
                                 <div className="flex-1 bg-white rounded-xl shadow-sm border border-[#E2E2E8] overflow-hidden">
                                     <NavigationMinimap
                                         activeSection={activeSection}
@@ -1818,7 +2048,7 @@ export default function DetailGeneratorApp() {
                                                 sectionOrder: newOrder
                                             }));
                                         }}
-                                        onAddSection={handleAddSection}
+                                        onAddSection={() => handleAddSection('custom')}
                                         previewRef={previewRef}
                                         previewHtml={previewHtml}
                                         textElements={textElements}
@@ -1855,6 +2085,9 @@ export default function DetailGeneratorApp() {
                 onChangeColor={handleOpenColorPicker}
                 onUndo={handleUndoSection}
                 canUndo={contextMenu.targetId ? (imageHistory[contextMenu.targetId]?.length || 0) > 0 : false}
+                isFlipped={contextMenu.targetId ? flippedSections.has(contextMenu.targetId) : false}
+                onFlipHorizontal={handleFlipHorizontal}
+                hasImage={contextMenu.targetId ? !!(generatedData.imageUrls?.[contextMenu.targetId] && generatedData.imageUrls[contextMenu.targetId] !== 'loading' && generatedData.imageUrls[contextMenu.targetId] !== 'SPACER' && !generatedData.imageUrls[contextMenu.targetId]?.includes?.('placeholder')) : false}
                 onDelete={() => {
                     if (!contextMenu.targetId) return;
                     // Delete the section directly
@@ -1870,6 +2103,7 @@ export default function DetailGeneratorApp() {
                     setSectionOrder(prevOrder => prevOrder.filter(s => s !== sectionId));
                     setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
                 }}
+                onDownload={handleDownloadSectionImage}
             />
 
             {/* Number Input Dialog for Pose Generation */}

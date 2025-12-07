@@ -1,5 +1,6 @@
 /**
  * AS Info Section - A/S 안내 섹션
+ * HTML 디자인 참조 - 하자 안내, A/S 안내, CAUTION 박스, 교환/환불 정책
  */
 
 import React from 'react';
@@ -7,7 +8,7 @@ import React from 'react';
 interface ASInfoData {
     defect?: { title: string; content: string[] };
     contact?: { title: string; desc: string; info: string };
-    caution?: { title: string; content: string[]; icons: { label: string }[] };
+    caution?: { title: string; content: string[]; icons?: { label: string }[] };
     refund?: { title: string; policy: { condition: string; cost: string; impossible: string[]; procedure: string } };
 }
 
@@ -15,37 +16,80 @@ interface ASInfoSectionProps {
     visible?: boolean;
     asData?: ASInfoData;
     customContent?: string; // Legacy fallback
+    panelContent?: {
+        title?: string;
+        phone?: string;
+        info1?: string;
+        cautions?: string;
+        fontSize?: number;
+        width?: number;
+    };
 }
 
-export default function ASInfoSection({ visible = true, asData, customContent }: ASInfoSectionProps) {
+// 기본 데이터
+const defaultASData: ASInfoData = {
+    defect: {
+        title: '제품에 하자가 있을 경우',
+        content: [
+            '제품 상태 확인 후 정확한 안내가 가능합니다.',
+            '구매처 문의하기를 통해 [사진/영상] 자료와 함께 내용을 남겨주시면, 유관부서 전달 후 조치 방안을 상세히 안내드리겠습니다.'
+        ]
+    },
+    contact: {
+        title: 'A/S 안내',
+        desc: '고객센터로 연락 주시면 내용 확인 후 순차적으로 도움을 드리겠습니다.',
+        info: '고객센터: 000-0000-0000\n채널 문의: @카카오톡채널아이디'
+    },
+    caution: {
+        title: 'Caution',
+        content: [
+            '가죽 특성상 개체별 색감 차이, 고유 주름 및 미세 스크래치가 있을 수 있으며, 이염이 발생할 수 있습니다.',
+            '생산 과정의 에이징 작업으로 인해 수령 시 자연스러운 주름이 있을 수 있으며 이는 불량이 아닙니다.',
+            '사이즈 확인 과정에서 제품 하자(가죽 손상, 과도한 시착 주름) 발생 시 교환/환불이 불가합니다. 동봉된 슈혼 사용을 권장합니다.'
+        ],
+        icons: [
+            { label: '주름 주의' },
+            { label: '착용 주의' }
+        ]
+    },
+    refund: {
+        title: '교환/환불 정책',
+        policy: {
+            condition: '상품 수령 후 7일 이내, 제품을 착용한 흔적이 없는 경우에 한해 가능합니다.',
+            cost: '제품 하자: 무료 교환/환불\n단순 변심: 고객 부담 (왕복 배송비)',
+            impossible: [
+                '상품이 훼손 되었거나 사용(착용) 흔적이 있는 경우',
+                '소비자 귀책으로 상품이 멸실 또는 훼손된 경우',
+                '시간 경과로 재판매가 곤란할 정도로 상품 가치가 감소한 경우',
+                '복제 가능한 상품의 포장을 개봉한 경우',
+                '주문 제작(커스텀) 상품인 경우'
+            ],
+            procedure: '구매처 고객센터를 통해 신청 접수 → 반송 안내에 따라 상품 발송 → 상품 검수 후 3~5영업일 이내 처리'
+        }
+    }
+};
+
+export default function ASInfoSection({ visible = true, asData, customContent, panelContent }: ASInfoSectionProps) {
     if (!visible) return null;
 
-    // Use structured data if available, otherwise display custom content or nothing
-    // If neither, we might want to show defaults, but the App init handles default data now.
+    // Merge panel content with defaults
+    const data = asData && Object.keys(asData).length > 0 ? asData : defaultASData;
 
-    // If customContent exists (and asData lacks specific fields, or as priority), show it.
-    // However, the plan is to move away from unstructured text. 
-    // We'll treat customContent as a fallback if asData is empty.
-    const isDataEmpty = !asData || Object.keys(asData).length === 0;
-
-    if (isDataEmpty && customContent) {
-        return (
-            <div style={{
-                fontFamily: "'Noto Sans KR', sans-serif",
-                maxWidth: '100%',
-                margin: '0 auto',
-                padding: '48px 24px',
-                background: 'white',
-                borderTop: '8px solid #f3f4f6'
-            }}>
-                <div style={{ whiteSpace: 'pre-wrap', fontSize: '14px', lineHeight: '1.6', color: '#4b5563' }}>
-                    {customContent}
-                </div>
-            </div>
-        );
-    }
-
-    const { defect, contact, caution, refund } = asData || {};
+    // Override with panel content if provided
+    const defect = {
+        ...data.defect,
+        content: panelContent?.info1 ? panelContent.info1.split('\n') : data.defect?.content
+    };
+    const contact = {
+        ...data.contact,
+        title: panelContent?.title || data.contact?.title,
+        info: panelContent?.phone ? `고객센터: ${panelContent.phone}` : data.contact?.info
+    };
+    const caution = {
+        ...data.caution,
+        content: panelContent?.cautions ? panelContent.cautions.split('\n') : data.caution?.content
+    };
+    const refund = data.refund;
 
     return (
         <div style={{
@@ -53,21 +97,20 @@ export default function ASInfoSection({ visible = true, asData, customContent }:
             maxWidth: '100%',
             margin: '0 auto',
             padding: '48px 24px',
-            background: 'white',
-            borderTop: '8px solid #f3f4f6'
+            background: 'white'
         }}>
-            {/* 상단 그리드 */}
+            {/* Top Grid: Defect & Contact */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(2, 1fr)',
                 gap: '40px',
                 marginBottom: '40px'
             }}>
-                {/* 하자 안내 */}
+                {/* Defect Handling */}
                 {defect && (
                     <div>
                         <h2 style={{
-                            fontSize: '16px',
+                            fontSize: '18px',
                             fontWeight: 700,
                             marginBottom: '16px',
                             borderLeft: '4px solid black',
@@ -80,18 +123,18 @@ export default function ASInfoSection({ visible = true, asData, customContent }:
                             paddingLeft: '20px',
                             listStyleType: 'disc'
                         }}>
-                            {defect.content.map((line, idx) => (
+                            {(defect.content || []).map((line, idx) => (
                                 <li key={idx}>{line}</li>
                             ))}
                         </ul>
                     </div>
                 )}
 
-                {/* A/S 안내 */}
+                {/* A/S Info */}
                 {contact && (
                     <div>
                         <h2 style={{
-                            fontSize: '16px',
+                            fontSize: '18px',
                             fontWeight: 700,
                             marginBottom: '16px',
                             borderLeft: '4px solid black',
@@ -109,7 +152,7 @@ export default function ASInfoSection({ visible = true, asData, customContent }:
                 )}
             </div>
 
-            {/* CAUTION 박스 */}
+            {/* CAUTION Box */}
             {caution && (
                 <div style={{
                     border: '2px solid #fecaca',
@@ -137,14 +180,14 @@ export default function ASInfoSection({ visible = true, asData, customContent }:
                         paddingLeft: '20px',
                         listStyleType: 'disc'
                     }}>
-                        {caution.content.map((line, idx) => (
-                            <li key={idx} style={idx === caution.content.length - 1 ? { fontWeight: 700, color: '#dc2626' } : {}}>
+                        {(caution.content || []).map((line, idx) => (
+                            <li key={idx} style={idx === (caution.content || []).length - 1 ? { fontWeight: 700, color: '#dc2626' } : {}}>
                                 {line}
                             </li>
                         ))}
                     </ul>
 
-                    {/* 경고 아이콘 */}
+                    {/* Warning Icons */}
                     {caution.icons && caution.icons.length > 0 && (
                         <div style={{
                             display: 'flex',
@@ -184,7 +227,7 @@ export default function ASInfoSection({ visible = true, asData, customContent }:
                 </div>
             )}
 
-            {/* 교환/환불 정책 */}
+            {/* Exchange/Refund Policy */}
             {refund && (
                 <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '40px' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '24px' }}>{refund.title}</h2>

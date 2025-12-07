@@ -28,6 +28,63 @@ export const POSE_VARIATIONS = [
     'front_view_pair',
 ] as const;
 
+// 40+ Safe Poses (No Sole Visibility)
+const SAFE_POSE_VARIANTS = [
+    { name: 'Standing Front - Neutral', prompt: 'Full body shot, standing facing forward, arms neutral by side, feet flat on ground.' },
+    { name: 'Standing Front - Hands in Pocket', prompt: 'Full body shot, standing facing forward, hands in pockets, feet flat on ground.' },
+    { name: 'Standing Front - Arms Crossed', prompt: 'Full body shot, standing facing forward, arms crossed, feet flat on ground.' },
+    { name: 'Standing 3/4 Left - Neutral', prompt: 'Full body shot, turned 45 degrees left, feet flat on ground.' },
+    { name: 'Standing 3/4 Right - Neutral', prompt: 'Full body shot, turned 45 degrees right, feet flat on ground.' },
+    { name: 'Standing Side Left', prompt: 'Full body shot, side profile facing left, feet flat on ground.' },
+    { name: 'Standing Side Right', prompt: 'Full body shot, side profile facing right, feet flat on ground.' },
+    { name: 'Leaning Against Wall', prompt: 'Full body shot, leaning back against a wall, casual pose, feet flat on ground.' },
+    { name: 'Wide Stance Front', prompt: 'Full body shot, facing forward, feet shoulder width apart, confident stance.' },
+    { name: 'One Leg Forward', prompt: 'Full body shot, one leg slightly forward, both feet flat on ground.' },
+    { name: 'Looking Over Shoulder', prompt: 'Full body shot, back to camera, looking back over shoulder, feet flat on ground.' },
+    { name: 'Rear View - Neutral', prompt: 'Full body shot, back to camera, standing straight, feet flat on ground.' },
+    { name: 'Rear View - Walking Away', prompt: 'Full body shot, back to camera, walking away, soles NOT visible (flat phase).' },
+    { name: 'Casual Lean', prompt: 'Full body shot, shifting weight to one hip, casual stance.' },
+    { name: 'Model Pose - Hand on Hip', prompt: 'Full body shot, one hand on hip, fashion stance, feet flat.' },
+    { name: 'Model Pose - Jacket Hold', prompt: 'Full body shot, holding jacket lapel, confident look.' },
+    { name: 'Model Pose - Hair Touch', prompt: 'Full body shot, one hand touching hair, elegant stance.' },
+    { name: 'Minimalist Standing', prompt: 'Full body shot, minimal movement, focus on silhouette, feet planted.' },
+    { name: 'Street Style - Waiting', prompt: 'Full body shot, standing as if waiting for someone, relaxed.' },
+    { name: 'Street Style - Phone Check', prompt: 'Full body shot, looking at phone, casual standing.' },
+    // A/B variants for diversity
+    { name: 'Standing - Weight Left', prompt: 'Full body shot, shifting weight to left leg, relaxed.' },
+    { name: 'Standing - Weight Right', prompt: 'Full body shot, shifting weight to right leg, relaxed.' },
+    { name: 'Leaning Forward', prompt: 'Full body shot, slight lean towards camera, engaging pose.' },
+    { name: 'Leaning Back', prompt: 'Full body shot, slight lean backwards, relaxed pose.' },
+    { name: 'Crossed Legs Standing', prompt: 'Full body shot, standing with legs crossed at ankles, feet flat.' },
+    { name: 'Side Glance', prompt: 'Full body shot, body forward, head turned to side.' },
+    { name: 'Hands Clasped', prompt: 'Full body shot, hands clasped in front, polite stance.' },
+    { name: 'Hands Behind Back', prompt: 'Full body shot, hands behind back, open chest.' },
+    { name: 'Walking Towards - Flat', prompt: 'Full body shot, walking towards camera, mid-stance with foot flat.' },
+    { name: 'Turning Around', prompt: 'Full body shot, in motion of turning, feet planted.' },
+    { name: 'Step to Side', prompt: 'Full body shot, taking a step to the side, feet flat.' },
+    { name: 'High Fashion Stand', prompt: 'Full body shot, angular fashion pose, feet grounded.' },
+    { name: 'Relaxed Slouch', prompt: 'Full body shot, slight slouch, very casual.' },
+    { name: 'Attention Pose', prompt: 'Full body shot, standing at attention, formal.' },
+    { name: 'Greeting Pose', prompt: 'Full body shot, one hand raised in greeting.' },
+    { name: 'Victory V', prompt: 'Full body shot, making V sign, cheerful.' },
+    { name: 'Thinking Pose', prompt: 'Full body shot, hand on chin, thoughtful.' },
+    { name: 'Pointing', prompt: 'Full body shot, pointing at something, dynamic.' },
+    { name: 'Hands on Knees', prompt: 'Full body shot, bending slightly with hands on knees.' },
+    { name: 'Stretching', prompt: 'Full body shot, arms stretched overhead, feet flat.' }
+];
+
+// Helper to get unique poses
+function getUniquePoses(count: number, usedNames: Set<string>): { name: string, prompt: string }[] {
+    const available = SAFE_POSE_VARIANTS.filter(p => !usedNames.has(p.name));
+    // Shuffle
+    const shuffled = [...available].sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, count);
+
+    // Mark as used
+    selected.forEach(p => usedNames.add(p.name));
+    return selected;
+}
+
 export interface QuickTransferPipelineOptions {
     models: { name: string; url: string }[];
     shoes: { name: string; url: string }[];
@@ -35,6 +92,7 @@ export interface QuickTransferPipelineOptions {
     studio: boolean;
     modelCuts: number;
     closeupCuts: number;
+    resolution: '1K' | '4K';
 }
 
 export interface PipelineResult {
@@ -88,13 +146,15 @@ const INITIAL_CLOSEUP_VARIANTS = [
  */
 export async function regenerateShoesOnly(
     baseImageUrl: string,
-    shoeImageUrl: string
+    shoeImageUrl: string,
+    options?: { resolution?: '1K' | '2K' }
 ): Promise<string> {
     const baseB64 = await urlToBase64(baseImageUrl);
     const shoeB64 = await urlToBase64(shoeImageUrl);
 
     const prompt = `// --- PROTOCOL: AGGRESSIVE_SHOE_REPLACEMENT ---
 // TASK: COMPLETELY ERASE old shoes and paint PRODUCT_IMAGES on the feet.
+// RESOLUTION_MODE: ${options?.resolution || '1K'}
 // OUTPUT FORMAT: Portrait (3:4).
 //
 // [CRITICAL FRAMING RULES]
@@ -111,13 +171,17 @@ export async function regenerateShoesOnly(
 BASE_IMAGE: [First image]
 PRODUCT_IMAGES: [Second image]`;
 
+    // Map resolution to config if needed, or pass as metadata
+    // For now we pass it in prompt or logic, but if server supports it:
+    const config = options?.resolution === '4K' ? { imageSize: '4K' } : { imageSize: '1K' };
+
     const result = await callGeminiSecure(
         prompt,
         [
             { data: baseB64, mimeType: 'image/png' },
             { data: shoeB64, mimeType: 'image/png' }
         ],
-        { aspectRatio: '3:4' }
+        config
     );
 
     if (result.type !== 'image') throw new Error('Shoe regeneration failed');
@@ -125,17 +189,55 @@ PRODUCT_IMAGES: [Second image]`;
 }
 
 /**
- * 🔐 스튜디오로 데려오기 (배경 변경)
+ * 🔐 스튜디오로 데려오기 (배경 변경) - 커스텀 배경 지원
  */
 export async function bringModelToStudio(
     modelImageUrl: string,
-    shoeImageUrl: string
+    shoeImageUrl: string,
+    options?: { resolution?: '1K' | '4K'; customBackgroundUrl?: string }
 ): Promise<string> {
     const modelB64 = await urlToBase64(modelImageUrl);
     const shoeB64 = await urlToBase64(shoeImageUrl);
 
-    const prompt = `// --- PROTOCOL: STUDIO_MASTER_GENERATION ---
+    // Check for custom background
+    const hasCustomBg = options?.customBackgroundUrl;
+    let bgB64: string | null = null;
+    if (hasCustomBg) {
+        bgB64 = await urlToBase64(options.customBackgroundUrl!);
+    }
+
+    // Different prompt based on whether custom background is provided
+    const prompt = hasCustomBg
+        ? `// --- PROTOCOL: CUSTOM_BACKGROUND_COMPOSITE ---
+// TARGET: Place model in the provided CUSTOM BACKGROUND with new shoes.
+// RESOLUTION_MODE: ${options?.resolution || '1K'}
+// OUTPUT FORMAT: Portrait (3:4).
+//
+// [BACKGROUND ANALYSIS]
+// 1. **ANALYZE IMAGE 3**: Study the lighting, atmosphere, perspective, and environment.
+// 2. **LIGHTING MATCHING**: Match model's lighting to the background's light source direction and color temperature.
+// 3. **PERSPECTIVE MATCHING**: Place model at natural scale and position within the scene.
+// 4. **SHADOW INTEGRATION**: Add realistic shadows that match the background's lighting.
+//
+// [CRITICAL PIXEL RULES]
+// 1. **FACE PRESERVATION**: Face MUST be pixel-perfect identical to original model.
+// 2. **BODY PRESERVATION**: Keep EXACT body proportions and skin texture.
+// 3. **SHOE REPLACEMENT**: Wear the provided PRODUCT_IMAGES (Image 2).
+// 4. **NATURAL INTEGRATION**: Model must look like they were photographed in this environment.
+// 5. **FRAMING**: FULL BODY SHOT. DO NOT CROP THE HEAD.
+//
+// [AVOID]
+// - Unnatural lighting on model that doesn't match background
+// - Model looking pasted or floating
+// - Different perspective/scale that looks wrong
+// - Visible edges or compositing artifacts
+
+ORIGINAL_MODEL_IMAGE: [First image]
+PRODUCT_IMAGES: [Second image]
+CUSTOM_BACKGROUND: [Third image]`
+        : `// --- PROTOCOL: STUDIO_MASTER_GENERATION ---
 // TARGET: Place model in a "Modern Concrete Studio" with new shoes.
+// RESOLUTION_MODE: ${options?.resolution || '1K'}
 // OUTPUT FORMAT: Portrait (3:4).
 //
 // [CRITICAL PIXEL RULES]
@@ -148,14 +250,21 @@ export async function bringModelToStudio(
 ORIGINAL_MODEL_IMAGE: [First image]
 PRODUCT_IMAGES: [Second image]`;
 
-    const result = await callGeminiSecure(
-        prompt,
-        [
-            { data: modelB64, mimeType: 'image/png' },
-            { data: shoeB64, mimeType: 'image/png' }
-        ],
-        { aspectRatio: '3:4' }
-    );
+    const config = options?.resolution === '4K' ? { imageSize: '4K' } : { imageSize: '1K' };
+
+    // Build images array - include custom background if provided
+    const images = hasCustomBg && bgB64
+        ? [
+            { data: modelB64, mimeType: 'image/png' as const },
+            { data: shoeB64, mimeType: 'image/png' as const },
+            { data: bgB64, mimeType: 'image/png' as const }
+        ]
+        : [
+            { data: modelB64, mimeType: 'image/png' as const },
+            { data: shoeB64, mimeType: 'image/png' as const }
+        ];
+
+    const result = await callGeminiSecure(prompt, images, config);
 
     if (result.type !== 'image') throw new Error('Studio generation failed');
     return result.data;
@@ -193,12 +302,15 @@ SOURCE_IMAGE: [Provided image]`;
  */
 export async function regenerateImageWithSpecificPose(
     baseImageUrl: string,
-    pose: string
+    pose: string,
+    options?: { resolution?: '1K' | '4K' }
 ): Promise<ImageAsset> {
     const baseB64 = await urlToBase64(baseImageUrl);
 
     const prompt = `// --- TASK: POSE_MODIFICATION ---
 // CHANGE POSE TO: ${pose}
+// STRICT CONSTRAINT: FEET MUST BE FLAT ON GROUND. NO SOLES VISIBLE.
+// RESOLUTION_MODE: ${options?.resolution || '1K'}
 // OUTPUT: Portrait (3:4).
 //
 // [CRITICAL FRAMING RULES]
@@ -214,10 +326,12 @@ export async function regenerateImageWithSpecificPose(
 
 REFERENCE_IMAGE: [Provided image]`;
 
+    const config = options?.resolution === '4K' ? { imageSize: '4K' } : { imageSize: '1K' };
+
     const result = await callGeminiSecure(
         prompt,
         [{ data: baseB64, mimeType: 'image/png' }],
-        { aspectRatio: '3:4' }
+        config
     );
 
     if (result.type !== 'image') throw new Error('Pose modification failed');
@@ -227,12 +341,17 @@ REFERENCE_IMAGE: [Provided image]`;
 /**
  * 🔐 변형 병렬 생성
  */
-async function generateVariations(baseAsset: ImageAsset, poses: { prompt: string, name: string }[]): Promise<ImageAsset[]> {
+// Update generateVariations to accept resolution and unique poses
+async function generateVariations(
+    baseAsset: ImageAsset,
+    poses: { prompt: string, name: string }[],
+    options?: { resolution?: '1K' | '4K' }
+): Promise<ImageAsset[]> {
     const results: ImageAsset[] = [];
 
     for (const pose of poses) {
         try {
-            const asset = await regenerateImageWithSpecificPose(baseAsset.url, pose.prompt);
+            const asset = await regenerateImageWithSpecificPose(baseAsset.url, pose.prompt, options);
             results.push({ url: asset.url, generatingParams: { pose: pose.name } });
         } catch (error) {
             console.error(`Failed to generate variation for ${pose.name}:`, error);
@@ -252,21 +371,27 @@ async function generateVariations(baseAsset: ImageAsset, poses: { prompt: string
 export async function generateInitialOriginalSet(
     modelImageUrl: string,
     shoeImageUrl: string,
-    onProgress?: (message: string) => void
+    resolution: '1K' | '4K' = '1K',
+    onProgress?: (message: string) => void,
+    usedPoses = new Set<string>()
 ): Promise<{ modelShots: ImageAsset[], closeupShots: ImageAsset[] }> {
     onProgress?.('1/5: 모델 전신 마스터 컷 생성 중 (SECURE)...');
-    const masterSwappedImageUrl = await regenerateShoesOnly(modelImageUrl, shoeImageUrl);
+    const masterSwappedImageUrl = await regenerateShoesOnly(modelImageUrl, shoeImageUrl, { resolution });
     const masterModelAsset: ImageAsset = { url: masterSwappedImageUrl, generatingParams: { pose: 'Front View (Master)' } };
+    usedPoses.add('Front View (Master)');
 
     onProgress?.('2/5: 전신 컷 변형 생성 중...');
-    const modelVariations = await generateVariations(masterModelAsset, INITIAL_MODEL_VARIANTS);
+    // Use unique poses
+    const modelPoses = getUniquePoses(3, usedPoses); // Defaulting to 3 variations alongside master if implicit, or parameterize
+    const modelVariations = await generateVariations(masterModelAsset, modelPoses, { resolution });
 
     onProgress?.('3/5: 하반신 클로즈업 마스터 컷 생성 중...');
     const frontCloseupUrl = await generateVerticalLegsCrop(masterSwappedImageUrl);
     const masterCloseupAsset: ImageAsset = { url: frontCloseupUrl, generatingParams: { pose: 'Original Leg Crop' } };
 
     onProgress?.('4/5: 클로즈업 변형 생성 중...');
-    const closeupVariations = await generateVariations(masterCloseupAsset, INITIAL_CLOSEUP_VARIANTS);
+    const closeupPoses = getUniquePoses(3, usedPoses); // Closeup variants from the safe list as well
+    const closeupVariations = await generateVariations(masterCloseupAsset, closeupPoses, { resolution });
 
     onProgress?.('5/5: 모든 이미지 마무리 중...');
 
@@ -282,21 +407,26 @@ export async function generateInitialOriginalSet(
 export async function generateStudioImageSet(
     modelImageUrl: string,
     shoeImageUrl: string,
-    onProgress?: (message: string) => void
+    resolution: '1K' | '4K' = '1K',
+    onProgress?: (message: string) => void,
+    usedPoses = new Set<string>()
 ): Promise<{ modelShots: ImageAsset[], closeupShots: ImageAsset[] }> {
     onProgress?.('1/5: 스튜디오 모델 마스터 컷 생성 중 (SECURE)...');
-    const masterStudioUrl = await bringModelToStudio(modelImageUrl, shoeImageUrl);
+    const masterStudioUrl = await bringModelToStudio(modelImageUrl, shoeImageUrl, { resolution });
     const masterStudioAsset: ImageAsset = { url: masterStudioUrl, generatingParams: { pose: 'Studio Front (Master)' } };
+    usedPoses.add('Studio Front (Master)');
 
     onProgress?.('2/5: 스튜디오 전신 변형 생성 중...');
-    const modelVariations = await generateVariations(masterStudioAsset, INITIAL_MODEL_VARIANTS);
+    const modelPoses = getUniquePoses(3, usedPoses);
+    const modelVariations = await generateVariations(masterStudioAsset, modelPoses, { resolution });
 
     onProgress?.('3/5: 스튜디오 하반신 마스터 컷 생성 중...');
     const frontCloseupUrl = await generateVerticalLegsCrop(masterStudioUrl);
     const masterCloseupAsset: ImageAsset = { url: frontCloseupUrl, generatingParams: { pose: 'Studio Leg Crop' } };
 
     onProgress?.('4/5: 스튜디오 클로즈업 변형 생성 중...');
-    const closeupVariations = await generateVariations(masterCloseupAsset, INITIAL_CLOSEUP_VARIANTS);
+    const closeupPoses = getUniquePoses(3, usedPoses);
+    const closeupVariations = await generateVariations(masterCloseupAsset, closeupPoses, { resolution });
 
     onProgress?.('5/5: 모든 이미지 마무리 중...');
 
@@ -492,75 +622,111 @@ export async function executeQuickTransferPipeline(
             }
         }
 
+        // Initialize Used Poses Set to track uniqueness across this session
+        const usedPoses = new Set<string>();
+
         // Model Cuts
-        for (let i = 0; i < options.modelCuts; i++) {
+        if (options.modelCuts > 0) {
+            // 1. Generate Master Model Cut (Index 0)
             currentStep++;
-            const poseInfo = MODEL_POSE_VARIANTS[i % MODEL_POSE_VARIANTS.length];
-            onProgress?.(`모델컷 ${i + 1}/${options.modelCuts}: ${poseInfo.name}`, currentStep, totalSteps);
+            onProgress?.(`모델컷 1/${options.modelCuts}: Master Cut`, currentStep, totalSteps);
 
+            let masterModelUrl = '';
             try {
-                let imgUrl: string;
-
-                if (i === 0) {
-                    imgUrl = options.studio
-                        ? await bringModelToStudio(modelUrl, shoeUrl)
-                        : await regenerateShoesOnly(modelUrl, shoeUrl);
+                if (options.studio) {
+                    masterModelUrl = await bringModelToStudio(modelUrl, shoeUrl, { resolution: options.resolution });
+                    usedPoses.add('Studio Front (Master)');
                 } else {
-                    const masterUrl = result.modelCuts[0];
-                    if (masterUrl) {
-                        const asset = await regenerateImageWithSpecificPose(masterUrl, poseInfo.prompt);
-                        imgUrl = asset.url;
-                    } else {
-                        imgUrl = options.studio
-                            ? await bringModelToStudio(modelUrl, shoeUrl)
-                            : await regenerateShoesOnly(modelUrl, shoeUrl);
-                    }
+                    masterModelUrl = await regenerateShoesOnly(modelUrl, shoeUrl, { resolution: options.resolution });
+                    usedPoses.add('Front View (Master)');
                 }
 
-                result.modelCuts.push(imgUrl);
-                onImageGenerated?.('modelCut', imgUrl, i, poseInfo.name);
+                result.modelCuts.push(masterModelUrl);
+                onImageGenerated?.('modelCut', masterModelUrl, 0, 'Master Cut');
             } catch (error) {
-                console.error(`모델컷 ${i + 1} 생성 실패:`, error);
+                console.error('Master Model Cut failed:', error);
+                onImageGenerated?.('modelCut', 'error', 0, 'Master Cut');
             }
 
-            await delay(1000);
+            // 2. Generate Variations (Index 1+)
+            if (options.modelCuts > 1 && masterModelUrl) {
+                const neededVars = options.modelCuts - 1;
+                const poses = getUniquePoses(neededVars, usedPoses);
+
+                for (let i = 0; i < neededVars; i++) {
+                    currentStep++;
+                    const pose = poses[i];
+                    onProgress?.(`모델컷 ${i + 2}/${options.modelCuts}: ${pose.name}`, currentStep, totalSteps);
+
+                    try {
+                        const asset = await regenerateImageWithSpecificPose(masterModelUrl, pose.prompt, { resolution: options.resolution });
+                        result.modelCuts.push(asset.url);
+                        result.usedPoses.push(pose.name as PoseVariation); // Cast for type compatibility or update type
+                        onImageGenerated?.('modelCut', asset.url, i + 1, pose.name);
+                    } catch (error) {
+                        console.error(`Variation ${i + 1} failed:`, error);
+                        onImageGenerated?.('modelCut', 'error', i + 1, pose.name);
+                    }
+                    await delay(1000);
+                }
+            }
         }
 
         // Closeup Cuts
-        const masterModelCut = result.modelCuts[0];
-
-        for (let i = 0; i < options.closeupCuts; i++) {
+        if (options.closeupCuts > 0) {
+            // 1. Generate Master Closeup (Index 0)
             currentStep++;
-            const poseInfo = CLOSEUP_POSE_VARIANTS[i % CLOSEUP_POSE_VARIANTS.length];
-            onProgress?.(`클로즈업 ${i + 1}/${options.closeupCuts}: ${poseInfo.name}`, currentStep, totalSteps);
+            onProgress?.(`클로즈업 1/${options.closeupCuts}: Leg Crop`, currentStep, totalSteps);
 
+            let masterCloseupUrl = '';
             try {
-                let imgUrl: string;
-
-                if (i === 0 && masterModelCut) {
-                    imgUrl = await generateVerticalLegsCrop(masterModelCut);
-                } else if (masterModelCut) {
-                    const masterCloseup = result.closeupCuts[0];
-                    if (masterCloseup) {
-                        const asset = await regenerateImageWithSpecificPose(masterCloseup, poseInfo.prompt);
-                        imgUrl = asset.url;
-                    } else {
-                        imgUrl = await generateVerticalLegsCrop(masterModelCut);
-                    }
-                } else {
-                    const tempMaster = options.studio
-                        ? await bringModelToStudio(modelUrl, shoeUrl)
-                        : await regenerateShoesOnly(modelUrl, shoeUrl);
-                    imgUrl = await generateVerticalLegsCrop(tempMaster);
+                // Use the master model cut if available, otherwise regenerate temp master
+                let sourceForCrop = result.modelCuts[0];
+                if (!sourceForCrop) {
+                    sourceForCrop = options.studio
+                        ? await bringModelToStudio(modelUrl, shoeUrl, { resolution: options.resolution })
+                        : await regenerateShoesOnly(modelUrl, shoeUrl, { resolution: options.resolution });
                 }
 
-                result.closeupCuts.push(imgUrl);
-                onImageGenerated?.('closeup', imgUrl, i, poseInfo.name);
+                masterCloseupUrl = await generateVerticalLegsCrop(sourceForCrop);
+                usedPoses.add('Leg Crop (Master)');
+
+                result.closeupCuts.push(masterCloseupUrl);
+                onImageGenerated?.('closeup', masterCloseupUrl, 0, 'Leg Crop');
             } catch (error) {
-                console.error(`클로즈업 ${i + 1} 생성 실패:`, error);
+                console.error('Master Closeup failed:', error);
+                onImageGenerated?.('closeup', 'error', 0, 'Leg Crop');
             }
 
-            await delay(1000);
+            // 2. Generate Closeup Variations (Index 1+)
+            if (options.closeupCuts > 1 && masterCloseupUrl) {
+                const neededVars = options.closeupCuts - 1;
+                // We can reuse getUniquePoses but prompts might need adaptation for closeups?
+                // Actually, SAFE_POSE_VARIANTS are full body prompts.
+                // For closeups, we need specific closeup prompts or re-use specific list.
+                // Let's use CLOSEUP_POSE_VARIANTS but filtered or randomized if possible.
+                // Since user asked for unique poses generally, let's just cycle widely or define SAFE_CLOSEUP_VARIANTS.
+                // For now, let's use the existing CLOSEUP_POSE_VARIANTS as a pool but handle indices better.
+
+                // FIX: Use specific closeup list for now as SAFE_POSE_VARIANTS are full body
+                const closeupPool = CLOSEUP_POSE_VARIANTS;
+
+                for (let i = 0; i < neededVars; i++) {
+                    currentStep++;
+                    const pose = closeupPool[i % closeupPool.length]; // Simple cycle for now as closeup vars are limited
+                    onProgress?.(`클로즈업 ${i + 2}/${options.closeupCuts}: ${pose.name}`, currentStep, totalSteps);
+
+                    try {
+                        const asset = await regenerateImageWithSpecificPose(masterCloseupUrl, pose.prompt, { resolution: options.resolution });
+                        result.closeupCuts.push(asset.url);
+                        onImageGenerated?.('closeup', asset.url, i + 1, pose.name);
+                    } catch (error) {
+                        console.error(`Closeup Variation ${i + 1} failed:`, error);
+                        onImageGenerated?.('closeup', 'error', i + 1, pose.name);
+                    }
+                    await delay(1000);
+                }
+            }
         }
 
 

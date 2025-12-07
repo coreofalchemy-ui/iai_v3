@@ -3,7 +3,7 @@
  * 모든 API 호출은 서버리스 함수를 통해 처리됩니다.
  */
 
-import { callGeminiSecure, urlToBase64 } from '../../../lib/geminiClient';
+import { callGeminiSecure, urlToBase64, urlToGeminiPart } from '../../../lib/geminiClient';
 
 export type StudioEffect =
     'minimal' |
@@ -25,8 +25,8 @@ export async function synthesizeShoeStudio(
     modelImageUrl: string,
     effect: StudioEffect = 'minimal'
 ): Promise<string> {
-    const shoeBase64 = await urlToBase64(shoeImageUrl);
-    const modelBase64 = await urlToBase64(modelImageUrl);
+    const shoePart = await urlToGeminiPart(shoeImageUrl);
+    const modelPart = await urlToGeminiPart(modelImageUrl);
 
     let scenePrompt = '';
     switch (effect) {
@@ -49,33 +49,40 @@ export async function synthesizeShoeStudio(
             scenePrompt = `**SCENE:** Modern studio with soft lighting.`;
     }
 
-    const prompt = `// --- PROTOCOL: STUDIO_SYNTHESIS (SECURE) ---
-// TARGET: Place shoe product in studio environment with model reference.
+    const prompt = `// --- PROTOCOL: PRECISE_SHOE_REPLACEMENT (SECURE) ---
+// TARGET: Replace the shoes in the MODEL_IMAGE with the shoe from PRODUCT_IMAGE.
 
-**[CRITICAL RULES]**
-1. **SHOE IDENTITY LOCK:** Shoe must be PIXEL-PERFECT identical to PRODUCT_IMAGE.
-2. **FACE PRESERVATION:** If model is in output, face must match MODEL_IMAGE exactly.
-3. **INTEGRATION:** Ensure realistic lighting and shadows.
+**[CRITICAL INSTRUCTIONS]**
+1. **PRESERVE SCENE:** You must keep the MODEL_IMAGE's background, lighting, and model appearance EXACTLY as is. Do NOT generate a new studio background.
+2. **PRECISE SWAP:** Detect the shoes in MODEL_IMAGE and replace ONLY them with the PRODUCT_IMAGE shoe.
+3. **IDENTITY LOCK:** The new shoe must be pixel-perfect identical to the PRODUCT_IMAGE (color, texture, shape).
+4. **INTEGRATION:** Match the lighting, shadows, and perspective of the original scene so the replacement looks completely natural.
+5. **OUTPUT:** Return the full image with the shoe replaced.
 
-${scenePrompt}
-
-Create a high-end commercial photograph.
-
-PRODUCT_IMAGE: [First image]
-MODEL_IMAGE: [Second image]`;
+PRODUCT_IMAGE: [First image - The new shoe]
+MODEL_IMAGE: [Second image - The original photo to edit]`;
 
     const result = await callGeminiSecure(
         prompt,
         [
-            { data: shoeBase64, mimeType: 'image/png' },
-            { data: modelBase64, mimeType: 'image/png' }
+            shoePart,
+            modelPart
         ],
         { aspectRatio: '3:4' }
     );
 
+    console.log('[ShoeStudioService] synthesizeShoeStudio result type:', result.type);
+
     if (result.type !== 'image') {
-        throw new Error('스튜디오 합성 실패');
+        console.error('[ShoeStudioService] Synthesis failed. Result:', result);
+        throw new Error('스튜디오 합성 실패 (이미지 반환 안됨)');
     }
+
+    // Check data validity
+    if (!result.data || result.data.length < 100) {
+        console.warn('[ShoeStudioService] Warning: Result data seems too short:', result.data);
+    }
+
     return result.data;
 }
 
@@ -84,7 +91,7 @@ MODEL_IMAGE: [Second image]`;
  */
 export async function applyStudioEffect(options: StudioOptions): Promise<string | null> {
     try {
-        const shoeBase64 = await urlToBase64(options.shoeImageUrl);
+        const shoePart = await urlToGeminiPart(options.shoeImageUrl);
 
         const prompt = `// --- TASK: STUDIO_EFFECT (SECURE) ---
 // Apply ${options.effect} effect to the shoe product.
@@ -93,7 +100,7 @@ export async function applyStudioEffect(options: StudioOptions): Promise<string 
 
         const result = await callGeminiSecure(
             prompt,
-            [{ data: shoeBase64, mimeType: 'image/png' }]
+            [shoePart]
         );
 
         if (result.type !== 'image') return null;

@@ -239,7 +239,9 @@ export const upscaleFace = async (base64Image: string): Promise<string> => {
     return result.data;
 };
 /**
- * 🔐 얼굴 교체 (보안 버전) - 원본 하드락 + 얼굴 마스킹 방식
+ * 🔐 전체 모델 재생성 (Full Model Regeneration)
+ * - 배경, 자세, 옷(질감/소재/색상), 신발을 정확히 유지
+ * - 새로운 모델(선택된 얼굴)로 전체를 자연스럽게 다시 렌더링
  */
 export const replaceFaceInImage = async (
     targetImageBase64: string,
@@ -248,52 +250,77 @@ export const replaceFaceInImage = async (
     const targetB64 = targetImageBase64.includes('base64,') ? targetImageBase64.split('base64,')[1] : targetImageBase64;
     const faceB64 = sourceFaceBase64.includes('base64,') ? sourceFaceBase64.split('base64,')[1] : sourceFaceBase64;
 
-    const prompt = `[TASK: FACE-ONLY REPLACEMENT WITH TONE MATCHING]
+    const prompt = `
+**ROLE: FASHION PHOTOGRAPHER AI ARTIST** (역할: 패션 사진작가 AI 아티스트)
 
-[IMAGE 1] TARGET - The original photo (THIS IS SACRED - DO NOT MODIFY ANYTHING EXCEPT FACE)
-[IMAGE 2] SOURCE - The new face to use
+**TASK: FULL MODEL REGENERATION** (전체 모델 재생성)
 
-[STEP 1: FACE DETECTION]
-If NO human face in Image 1 → Return Image 1 100% UNCHANGED.
+**INPUT IMAGES:**
+* **IMAGE 1 [REFERENCE SCENE]**: Complete source of truth for:
+  - EXACT background (color, texture, lighting, environment)
+  - EXACT pose and body position (standing, sitting, walking, arm positions)
+  - EXACT outfit including all fabric textures, colors, patterns, wrinkles, folds
+  - EXACT shoes including brand details, outsole, stitching, material shine
+  - EXACT lighting setup and shadows
+  
+* **IMAGE 2 [NEW MODEL IDENTITY]**: Source for the new model's face/identity only.
 
-[STEP 2: FACE MASK IDENTIFICATION]
-- Identify the EXACT face region in Image 1 (forehead to chin, ear to ear)
-- This is the ONLY area that will be modified
-- Everything outside this mask = UNTOUCHABLE
+**CRITICAL REQUIREMENTS (핵심 요구사항):**
 
-[STEP 3: FACE REPLACEMENT - INPAINTING STYLE]
-REPLACE the face region with the identity from Image 2:
-1. Scale the new face to EXACTLY match the original face size
-2. Position at EXACTLY the same location
-3. Match head angle/tilt EXACTLY
+1. **BACKGROUND LOCK (배경 완벽 유지):**
+   - Copy the background pixel-perfectly from IMAGE 1
+   - Same studio backdrop, same lighting, same shadows, same atmosphere
+   
+2. **OUTFIT PRESERVATION (의상 완벽 보존):**
+   - IDENTICAL clothing from IMAGE 1
+   - Same fabric texture, same wrinkles, same colors, same fit
+   - Same accessories if any
+   
+3. **SHOES CRITICAL (신발 중요!):**
+   - EXACT same shoes as IMAGE 1
+   - Preserve all shoe details: outsole, stitching, material, shine, brand elements
+   - Position and angle must match the original pose
+   
+4. **POSE MATCHING (자세 매칭):**
+   - IDENTICAL body pose, arm position, leg position as IMAGE 1
+   - Same body proportions and positioning
+   
+5. **NEW MODEL RENDERING (새 모델 렌더링):**
+   - Generate the ENTIRE body with IMAGE 2's face identity
+   - Body proportions should be similar to IMAGE 1 (naturally fitting the same clothes)
+   - The face should be IMAGE 2's identity, rendered naturally to match the scene lighting
+   - Hair can be adapted to match IMAGE 2's style
+   
+6. **NATURAL INTEGRATION (자연스러운 통합):**
+   - The new model must look completely natural in the scene
+   - No visible editing artifacts, no face-pasting look
+   - Consistent lighting across the entire body and face
+   - Professional fashion photography quality
 
-[STEP 4: TONE & COLOR MATCHING - CRITICAL]
-- Analyze Image 1's color temperature (warm/cool)
-- Analyze Image 1's lighting direction and intensity
-- Analyze Image 1's skin tone and saturation
-- Apply these EXACT same values to the new face
-- The new face MUST look like it was photographed in the same conditions
+**OUTPUT:**
+A photorealistic fashion image with a NEW model (from IMAGE 2's identity) wearing the EXACT same outfit and shoes from IMAGE 1, in the EXACT same pose and background.
+**CRITICAL: Output must have the EXACT same dimensions and aspect ratio as IMAGE 1.**
 
-[HARD LOCK - VIOLATIONS = FAILURE]
-✗ DO NOT redraw the body
-✗ DO NOT redraw the clothing
-✗ DO NOT redraw the background
-✗ DO NOT change image dimensions
-✗ DO NOT crop or zoom
-✗ DO NOT change the overall image tone
-✓ ONLY replace the face+hair region
-✓ BLEND edges seamlessly
-✓ MATCH original photo's color grading
+**IMAGE SIZE & QUALITY:**
+- Output MUST be the same aspect ratio as IMAGE 1 (match width:height ratio exactly)
+- Slightly enhance quality and sharpness compared to original
+- Professional fashion photography resolution
 
-[OUTPUT]
-Original photo with ONLY the face area replaced. New face should look native to the original photo's lighting and tone.`;
+**AVOID:**
+- Face-only pasting that looks artificial
+- Changing any aspect of clothing, shoes, or background
+- Different pose or body position
+- Loss of shoe details (outsole, stitching, material)
+- Unnatural lighting or skin tones
+- Different aspect ratio or cropping from original IMAGE 1
+`;
 
     const result = await callGeminiSecure(prompt, [
         { data: targetB64, mimeType: 'image/png' },
         { data: faceB64, mimeType: 'image/png' }
-    ]);
+    ], { temperature: 0.4 });
 
-    if (result.type !== 'image') throw new Error('Face replacement failed');
+    if (result.type !== 'image') throw new Error('Model regeneration failed');
     return result.data;
 };
 

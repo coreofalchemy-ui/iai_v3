@@ -1,5 +1,6 @@
-import React, { useRef, useCallback, useState } from 'react';
+import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { Reorder } from 'framer-motion';
+import html2canvas from 'html2canvas';
 
 const colors = { bgBase: '#F5F5F7', bgSurface: '#FFFFFF', bgSubtle: '#F0F0F4', borderSoft: '#E2E2E8', textPrimary: '#111111', textSecondary: '#6E6E73', textMuted: '#A1A1AA', accentPrimary: '#111111' };
 
@@ -27,26 +28,51 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
     const minimapRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
     const [minimapScale, setMinimapScale] = useState(1);
+    // 섹션별 캡처 이미지 저장
+    const [sectionCaptures, setSectionCaptures] = useState<{ [key: string]: string }>({});
+    const captureTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    React.useEffect(() => { setImgErrors({}); }, [data?.imageUrls]);
+    useEffect(() => { setImgErrors({}); }, [data?.imageUrls]);
 
-    const getPreviewImage = (section: string) => {
-        const directUrl = data?.imageUrls?.[section];
-        if (typeof directUrl === 'string' && directUrl !== 'loading' && directUrl !== 'SPACER') return directUrl;
-        if (typeof directUrl === 'object' && directUrl !== null) {
-            if (directUrl.url) return directUrl.url;
-            if (Array.isArray(directUrl) && directUrl.length > 0) {
-                const firstItem = directUrl[0];
-                if (typeof firstItem === 'string') return firstItem;
-                if (firstItem?.url) return firstItem.url;
+    // 프리뷰어 섹션을 html2canvas로 캡처
+    const captureSection = useCallback(async (sectionId: string) => {
+        if (!previewRef?.current) return;
+
+        const sectionEl = previewRef.current.querySelector(`[data-section="${sectionId}"]`) as HTMLElement;
+        if (!sectionEl) return;
+
+        try {
+            const canvas = await html2canvas(sectionEl, {
+                scale: 0.3, // 축소 비율
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+            });
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+            setSectionCaptures(prev => ({ ...prev, [sectionId]: dataUrl }));
+        } catch (e) {
+            console.warn('Section capture failed:', sectionId, e);
+        }
+    }, [previewRef]);
+
+    // 데이터 변경 시 모든 섹션 캡처 (디바운스)
+    useEffect(() => {
+        if (captureTimeoutRef.current) {
+            clearTimeout(captureTimeoutRef.current);
+        }
+
+        captureTimeoutRef.current = setTimeout(() => {
+            sectionOrder.forEach(section => {
+                captureSection(section);
+            });
+        }, 500); // 500ms 디바운스
+
+        return () => {
+            if (captureTimeoutRef.current) {
+                clearTimeout(captureTimeoutRef.current);
             }
-        }
-        if (section === 'products' && data?.imageUrls?.products?.[0]) {
-            const p = data.imageUrls.products[0];
-            return typeof p === 'string' ? p : p?.url;
-        }
-        return null;
-    };
+        };
+    }, [sectionOrder, data, captureSection]);
 
     const getSectionLabel = (section: string) => {
         if (section === 'hero') return '히어로';
@@ -56,6 +82,10 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
         if (section.startsWith('size-guide')) return '사이즈';
         if (section.startsWith('precautions')) return '주의사항';
         if (section.startsWith('as-info')) return 'A/S';
+        if (section.startsWith('beautified')) return '제품';
+        if (section.startsWith('model-cut')) return '모델';
+        if (section.startsWith('closeup')) return '클로즈업';
+        if (section.startsWith('product')) return '제품';
         return '섹션';
     };
 
@@ -77,14 +107,15 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
                 if (onAction && imageUrl) {
                     onAction('updateImage', section, 0, imageUrl);
                     setImgErrors(prev => ({ ...prev, [section]: false }));
+                    // 즉시 재캡처
+                    setTimeout(() => captureSection(section), 100);
                 }
             };
             reader.readAsDataURL(file);
         }
-    }, [onAction]);
+    }, [onAction, captureSection]);
 
     const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); };
-    const handleImgError = (section: string) => { setImgErrors(prev => ({ ...prev, [section]: true })); };
 
     return (
         <div className="h-full flex flex-col" style={{ background: colors.bgSurface, fontFamily: '-apple-system, sans-serif' }}>
@@ -108,7 +139,13 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
             <div style={{ background: colors.bgBase }} className="flex-grow overflow-auto p-3 custom-scrollbar">
                 <div style={{ transform: `scale(${minimapScale})`, transformOrigin: 'top center', transition: 'transform 0.2s' }}>
                     <Reorder.Group axis="y" values={sectionOrder} onReorder={onReorder} style={{ boxShadow: '0 8px 24px rgba(0,0,0,0.1)', borderRadius: 8, overflow: 'hidden' }} className="flex flex-col">
-                        {sectionOrder.map((section: string) => (
+                        {sectionOrder.filter((section: string) => {
+                            // Hide sections based on visibility flags
+                            if (section.startsWith('size-guide') && data.showSizeGuide === false) return false;
+                            if (section.startsWith('as-info') && data.showASInfo === false) return false;
+                            if (section.startsWith('precautions') && data.showPrecautions === false) return false;
+                            return true;
+                        }).map((section: string) => (
                             <Reorder.Item key={section} value={section} className="cursor-grab active:cursor-grabbing">
                                 <div
                                     ref={(el) => { minimapRefs.current[section] = el; }}
@@ -117,10 +154,16 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
                                     onClick={() => handleMinimapClick(section)}
                                 >
                                     <div className="w-full flex items-center justify-center relative">
-                                        {getPreviewImage(section) && !imgErrors[section] ? (
-                                            <img src={getPreviewImage(section)!} alt={section} className="w-full h-auto block" onError={() => handleImgError(section)} />
+                                        {/* 캡처된 섹션 이미지 표시 (프리뷰어 축소판) */}
+                                        {sectionCaptures[section] ? (
+                                            <img
+                                                src={sectionCaptures[section]}
+                                                alt={section}
+                                                className="w-full h-auto block"
+                                                style={{ minHeight: 30 }}
+                                            />
                                         ) : (
-                                            <div style={{ background: colors.bgSubtle, border: `1px solid ${colors.borderSoft}` }} className="flex items-center justify-center w-full h-full py-4">
+                                            <div style={{ background: '#ffffff', border: `1px solid ${colors.borderSoft}` }} className="flex items-center justify-center w-full py-6">
                                                 <span style={{ fontSize: 10, color: colors.textMuted, fontWeight: 500, letterSpacing: '0.06em' }} className="uppercase">{getSectionLabel(section)}</span>
                                             </div>
                                         )}
@@ -135,7 +178,7 @@ export const NavigationMinimap: React.FC<NavigationMinimapProps> = ({
                     </Reorder.Group>
 
                     {onAddSection && (
-                        <button onClick={onAddSection} style={{ width: '100%', marginTop: 8, aspectRatio: '1', borderRadius: 8, border: `2px dashed ${colors.borderSoft}`, color: colors.textMuted }} className="flex flex-col items-center justify-center hover:border-gray-400 hover:bg-gray-50 transition-all gap-1">
+                        <button onClick={onAddSection} style={{ width: '100%', marginTop: 8, aspectRatio: '1', borderRadius: 8, border: `2px dashed ${colors.borderSoft}`, color: colors.textMuted, background: '#ffffff' }} className="flex flex-col items-center justify-center hover:border-gray-400 hover:bg-gray-50 transition-all gap-1">
                             <span style={{ fontSize: 20, fontWeight: 300 }}>+</span>
                             <span style={{ fontSize: 10, fontWeight: 500 }}>Add</span>
                         </button>
