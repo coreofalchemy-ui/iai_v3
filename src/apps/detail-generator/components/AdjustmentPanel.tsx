@@ -278,33 +278,61 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
 
     const handleProductDragOver = (e: React.DragEvent) => { e.preventDefault(); setProductDragActive(true); };
     const handleProductDragLeave = () => setProductDragActive(false);
-    const handleProductDrop = async (e: React.DragEvent) => {
+
+    // 🔒 단순화된 업로드 로직 - Map으로 중복 제거
+    const handleProductDrop = (e: React.DragEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         setProductDragActive(false);
-        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
-        if (files.length > 0) {
-            // Filter duplicates by name and size
-            const uniqueFiles = files.filter(newFile =>
-                !productFiles.some((existingFile: File) =>
-                    existingFile.name === newFile.name && existingFile.size === newFile.size
-                )
-            );
-            const newFiles = [...productFiles, ...uniqueFiles].slice(0, 10);
-            onUpdate({ ...data, productFiles: newFiles });
-        }
+
+        const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+        if (droppedFiles.length === 0) return;
+
+        // Map을 사용하여 중복 제거 (key: name+size)
+        const fileMap = new Map<string, File>();
+
+        // 기존 파일 먼저 추가
+        productFiles.forEach((f: File) => fileMap.set(`${f.name}_${f.size}`, f));
+
+        // 새 파일 추가 (중복이면 덮어쓰지 않음)
+        droppedFiles.forEach(f => {
+            const key = `${f.name}_${f.size}`;
+            if (!fileMap.has(key)) {
+                fileMap.set(key, f);
+            }
+        });
+
+        const finalFiles = Array.from(fileMap.values()).slice(0, 10);
+        console.log('[Drop] 최종 파일 수:', finalFiles.length);
+        onUpdate({ ...data, productFiles: finalFiles });
     };
+
     const handleProductFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
-        if (files.length > 0) {
-            // Filter duplicates by name and size
-            const uniqueFiles = files.filter(newFile =>
-                !productFiles.some((existingFile: File) =>
-                    existingFile.name === newFile.name && existingFile.size === newFile.size
-                )
-            );
-            const newFiles = [...productFiles, ...uniqueFiles].slice(0, 10);
-            onUpdate({ ...data, productFiles: newFiles });
+        const selectedFiles = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+        if (selectedFiles.length === 0) {
+            e.target.value = '';
+            return;
         }
+
+        // Map을 사용하여 중복 제거 (key: name+size)
+        const fileMap = new Map<string, File>();
+
+        // 기존 파일 먼저 추가
+        productFiles.forEach((f: File) => fileMap.set(`${f.name}_${f.size}`, f));
+
+        // 새 파일 추가 (중복이면 덮어쓰지 않음)
+        selectedFiles.forEach(f => {
+            const key = `${f.name}_${f.size}`;
+            if (!fileMap.has(key)) {
+                fileMap.set(key, f);
+            }
+        });
+
+        const finalFiles = Array.from(fileMap.values()).slice(0, 10);
+        console.log('[Select] 최종 파일 수:', finalFiles.length);
+        onUpdate({ ...data, productFiles: finalFiles });
+
+        e.target.value = '';
     };
 
     const removeProductFile = (index: number) => {
@@ -696,7 +724,8 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                 const sections: { id: string; url: string }[] = [];
                                 if (data.imageUrls) {
                                     Object.entries(data.imageUrls).forEach(([key, url]) => {
-                                        if (typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:'))) {
+                                        // 제품 이미지 섹션만 필터링 ('product-' 접두사로 시작하는 것만)
+                                        if (key.startsWith('product-') && typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:'))) {
                                             sections.push({ id: key, url: url });
                                         }
                                     });
@@ -742,6 +771,17 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                         onUpdateResults={(results) => onUpdate({ ...data, contentGenerations: results })}
                         onImageGenerated={(url) => {
                             setGeneratedImages(prev => [...prev, url]);
+                        }}
+                        // Persist source images
+                        savedSourceImages={data.imageUrls?.contentSourceImages || []}
+                        onUpdateSourceImages={(newImages) => {
+                            onUpdate({
+                                ...data,
+                                imageUrls: {
+                                    ...data.imageUrls,
+                                    contentSourceImages: newImages
+                                }
+                            });
                         }}
                     />
                 )}

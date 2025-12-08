@@ -694,12 +694,10 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                 // Create an image element to get dimensions
                 const img = new Image();
                 img.onload = () => {
-                    // Calculate height based on 1000px width
-                    const aspectRatio = img.naturalHeight / img.naturalWidth;
-                    const calculatedHeight = 1000 * aspectRatio;
-
+                    // Update image only - let height be auto
                     onAction('updateImage', sectionKey, 0, result);
-                    onUpdateSectionHeight(sectionKey, calculatedHeight);
+                    // Force reset height so css 'height: auto' works
+                    onUpdateSectionHeight(sectionKey, 0);
 
                     // Reset transform
                     if (onUpdateImageTransform) {
@@ -1256,9 +1254,10 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                 const isLoading = imageUrl === 'loading'; // 스트리밍 로딩 상태
                 const isPlaceholder = !imageUrl || imageUrl.includes('placeholder') || imageUrl.includes('via.placeholder') || isLoading;
 
-                // Determine height: use explicit height if available, otherwise default logic
+                // Determine height: use explicit height if available AND greater than 0, otherwise default logic
                 const explicitHeight = sectionHeights[sectionKey];
-                const styleHeight = explicitHeight ? `${explicitHeight}px` : (isPlaceholder ? '200px' : 'auto');
+                // If explicitHeight is 0, we treat it as "auto" intentionally
+                const styleHeight = (explicitHeight && explicitHeight > 0) ? `${explicitHeight}px` : (isPlaceholder ? '200px' : 'auto');
 
                 // Image Transform
                 const transform = imageTransforms?.[sectionKey] || { scale: 1, x: 0, y: 0 };
@@ -1328,13 +1327,10 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                                     onMouseDown={(e) => handleImageMouseDown(e, sectionKey)}
                                     /* onWheel removed in favor of native listener */
                                     onLoad={(e) => {
-                                        // Auto-calculate section height based on image dimensions
-                                        const img = e.currentTarget;
-                                        if (img.naturalWidth > 0 && img.naturalHeight > 0 && !sectionHeights[sectionKey]) {
-                                            const aspectRatio = img.naturalHeight / img.naturalWidth;
-                                            const calculatedHeight = 1000 * aspectRatio;
-                                            onUpdateSectionHeight(sectionKey, calculatedHeight);
-                                        }
+                                        // Removed force height calculation to prevent bottom gaps
+                                        // Height will be handled by CSS 'height: auto'
+                                        console.log(`🖼️ Image loaded for ${sectionKey}. Forcing height reset to 0 (auto).`);
+                                        onUpdateSectionHeight(sectionKey, 0);
                                     }}
                                 />
                                 {filterStyles && <FilterOverlay activeFilter={activeFilter} />}

@@ -4,6 +4,17 @@
  */
 
 import { callGeminiSecure, extractBase64, urlToBase64 } from '../../../lib/geminiClient';
+import { GeminiImagePart } from '../../../lib/geminiClient';
+
+// Helper to extract image dimensions from base64
+const extractImageDimensions = (base64Data: string): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        img.onerror = () => resolve({ width: 1024, height: 1365 }); // Fallback
+        img.src = base64Data.startsWith('data:') ? base64Data : `data:image/png;base64,${base64Data}`;
+    });
+};
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -24,7 +35,7 @@ export const POSE_VARIATIONS = [
     'diagonal_front_single',
     'diagonal_back_pair',
     'rear_view_pair',
-    'top_closed_pair',
+    'side_low_angle_single',
     'front_view_pair',
 ] as const;
 
@@ -93,6 +104,7 @@ export interface QuickTransferPipelineOptions {
     modelCuts: number;
     closeupCuts: number;
     resolution: '1K' | '4K';
+    customBackground?: string;  // 커스텀 배경 이미지 URL (선택)
 }
 
 export interface PipelineResult {
@@ -115,10 +127,6 @@ export interface ImageAsset {
     generatingParams?: { pose?: string };
 }
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
 function delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -137,6 +145,44 @@ const INITIAL_CLOSEUP_VARIANTS = [
     { name: 'Variation: 45 Degree', prompt: 'Close-up edit: Feet positioned at a 45-degree angle.' }
 ];
 
+// 20 Closeup Lower Body Poses (하반신 클로즈업 전용 - 허리 아래만)
+const CLOSEUP_LOWER_BODY_POSES = [
+    { name: 'Side Profile Standing', prompt: 'Side profile view of lower body. Feet flat on ground, relaxed stance. Show from waist down only.' },
+    { name: 'Front Standing Neutral', prompt: 'Front view of lower body. Both feet flat, shoulder width apart. Waist down only.' },
+    { name: 'Walking Stride', prompt: 'Mid-stride walking pose. One foot forward, one back. Lower body only from waist down.' },
+    { name: 'Crossed Ankles', prompt: 'Standing with ankles crossed. Relaxed pose. Show waist to feet only.' },
+    { name: 'Weight on Left', prompt: 'Standing with weight shifted to left leg. Casual stance. Lower body only.' },
+    { name: 'Weight on Right', prompt: 'Standing with weight shifted to right leg. Casual stance. Lower body only.' },
+    { name: 'Tiptoe Stance', prompt: 'Standing on tiptoes. Heels raised high. Show knees down to feet.' },
+    { name: 'One Foot Forward', prompt: 'One foot stepped forward. Confident pose. Waist down only.' },
+    { name: 'Feet Together', prompt: 'Feet together, heels touching. Formal stance. Lower body only.' },
+    { name: 'Wide Stance', prompt: 'Wide power stance. Feet wider than shoulders. Waist to feet.' },
+    { name: '45 Degree Left', prompt: 'Body turned 45 degrees left. Lower body perspective. Waist down.' },
+    { name: '45 Degree Right', prompt: 'Body turned 45 degrees right. Lower body perspective. Waist down.' },
+    { name: 'Back View Standing', prompt: 'Rear view of lower body. Standing straight. Show from waist to feet.' },
+    { name: 'Step to Side', prompt: 'Taking a step to the side. Dynamic movement. Lower body only.' },
+    { name: 'Knee Bent Casual', prompt: 'One knee slightly bent, relaxed pose. Fashion style. Waist down only.' },
+    { name: 'Feet Angled Outward', prompt: 'Standing with feet angled outward. Ballet-inspired. Lower body only.' },
+    { name: 'Feet Angled Inward', prompt: 'Standing with feet slightly angled inward. Cute casual pose. Waist down.' },
+    { name: 'Low Angle Dramatic', prompt: 'Low camera angle looking up at shoes. Dramatic perspective. Feet to knees.' },
+    { name: 'Walking Away', prompt: 'Walking away from camera. Rear view lower body. Mid-stride.' },
+    { name: 'Dynamic Jump Prep', prompt: 'About to jump, knees slightly bent. Dynamic energy. Lower body only.' }
+];
+
+// Helper to get random unique closeup poses
+function getRandomCloseupPoses(count: number, usedNames: Set<string>): { name: string; prompt: string }[] {
+    const available = CLOSEUP_LOWER_BODY_POSES.filter(p => !usedNames.has(p.name));
+    // Shuffle using Fisher-Yates
+    const shuffled = [...available];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    const selected = shuffled.slice(0, Math.min(count, shuffled.length));
+    selected.forEach(p => usedNames.add(p.name));
+    return selected;
+}
+
 // ============================================================================
 // CORE GENERATION FUNCTIONS (SECURE)
 // ============================================================================
@@ -147,7 +193,7 @@ const INITIAL_CLOSEUP_VARIANTS = [
 export async function regenerateShoesOnly(
     baseImageUrl: string,
     shoeImageUrl: string,
-    options?: { resolution?: '1K' | '2K' }
+    options?: { resolution?: '1K' | '2K' | '4K' }
 ): Promise<string> {
     const baseB64 = await urlToBase64(baseImageUrl);
     const shoeB64 = await urlToBase64(shoeImageUrl);
@@ -165,15 +211,23 @@ export async function regenerateShoesOnly(
 // [INSTRUCTIONS]
 // 1. **TARGET**: Identify the feet/shoes area in BASE_IMAGE.
 // 2. **ACTION**: REPLACE the shoes with exact design from PRODUCT_IMAGES.
-// 3. **IDENTITY LOCK**: EVERYTHING ELSE MUST BE IDENTICAL.
-// 4. **INTEGRATION**: Ensure realistic lighting and shadows.
+// 3. **INTEGRATION**: Shoes must realistically touch the ground. ADD SHADOWS to contact points.
+// 4. **BLENDING**: MATCH lighting and color tone of the shoes to the model's environment.
+// 5. **QUALITY**: Masterpiece, 8k resolution, highly detailed texture, photorealistic. NO "CUTOUT" LOOK.
 
 BASE_IMAGE: [First image]
 PRODUCT_IMAGES: [Second image]`;
 
     // Map resolution to config if needed, or pass as metadata
     // For now we pass it in prompt or logic, but if server supports it:
-    const config = options?.resolution === '4K' ? { imageSize: '4K' } : { imageSize: '1K' };
+    // Extract dimensions from base model to preserve aspect ratio
+    const dimensions = await extractImageDimensions(baseB64);
+    const aspectRatio = `${dimensions.width}:${dimensions.height}`;
+
+    const config = {
+        imageSize: options?.resolution === '4K' ? '4K' : '1K',
+        aspectRatio
+    };
 
     const result = await callGeminiSecure(
         prompt,
@@ -246,11 +300,16 @@ CUSTOM_BACKGROUND: [Third image]`
 // 3. **SHOE REPLACEMENT**: Wear the provided PRODUCT_IMAGES.
 // 4. **BACKGROUND**: Neutral grey concrete studio wall and floor.
 // 5. **FRAMING**: FULL BODY SHOT. DO NOT CROP THE HEAD.
+// 6. **QUALITY**: Commercial photography, 8k resolution, sharp focus, high fidelity.
 
 ORIGINAL_MODEL_IMAGE: [First image]
 PRODUCT_IMAGES: [Second image]`;
 
-    const config = options?.resolution === '4K' ? { imageSize: '4K' } : { imageSize: '1K' };
+    // Force strict output size: 750x900
+    const config = {
+        imageSize: '1K',
+        aspectRatio: '750:900'
+    };
 
     // Build images array - include custom background if provided
     const images = hasCustomBg && bgB64
@@ -276,21 +335,41 @@ PRODUCT_IMAGES: [Second image]`;
 export async function generateVerticalLegsCrop(baseImageUrl: string): Promise<string> {
     const baseB64 = await urlToBase64(baseImageUrl);
 
-    const prompt = `// --- TASK: PORTRAIT_LEG_SHOT_GENERATION ---
-// ACTION: Generate a PORTRAIT IMAGE (3:4) focusing on model's legs and shoes.
-//
-// [COMPOSITION RULES]
-// 1. **FRAME**: Portrait (3:4).
-// 2. **CROP**: Cut off at the waist. Show waist down to feet.
-// 3. **FILL**: Legs must fill the frame.
-// 4. **IDENTITY**: Keep trousers, skin tone, and shoes IDENTICAL.
+    const prompt = `
+    **ROLE**: Professional Fashion Photographer (Hypebeast/Streetwear Specialist)
+    **TASK**: Regenerate this photo as a **WAIST-DOWN CLOSE-UP**.
+    **CRITICAL CONSTRAINT**: The input image is a reference. Create a new image focusing ONLY on the lower body.
 
-SOURCE_IMAGE: [Provided image]`;
+    ⚠️ **ABSOLUTE FRAMING RULES** ⚠️:
+    1. **TOP BORDER**: MUST cut off at the **WAIST** or **BELT LINE**. Nothing above waist visible.
+    2. **FOCUS**: High-detail focus on the **SHOES** and **LEGS** (Pants/Skirt).
+    3. **EXCLUSION**: ❌ NO HEAD. ❌ NO CHEST. ❌ NO SHOULDERS. ❌ NO FACE. ❌ NO ARMS.
+    4. **COMPOSITION**: "Shoe Detail Shot" - shoes fully visible and centered at the bottom.
+    5. **FRAME CHECK**: If ANY part above waist is visible = FAILURE.
+
+    **IMAGE QUALITY (원본 화질 유지)**:
+    - **MATCH SOURCE QUALITY**: Output quality MUST match the input image EXACTLY.
+    - **ULTRA SHARP**: Crystal clear, razor-sharp focus. NO blur, NO haze, NO softness.
+    - **8K RESOLUTION**: Professional high-definition, ultra-detailed output.
+    - **PRESERVE TEXTURE**: Maintain all fabric textures, material details exactly.
+    - **CLEAN EDGES**: All edges must be crisp and well-defined.
+
+    **STYLE PRESERVATION**:
+    - Perfectly replicate the original outfit (lower body), shoes, and background texture.
+    - Maintain the original lighting mood, shadows, and highlights EXACTLY.
+    - Same color grading and tone as the original.
+
+    **OUTPUT**: Ultra-high-resolution, vertical image of the lower body only. Razor-sharp quality.
+    `;
+
+    // Extract dimensions from base model to preserve aspect ratio
+    const dimensions = await extractImageDimensions(baseB64);
+    const aspectRatio = `${dimensions.width}:${dimensions.height}`;
 
     const result = await callGeminiSecure(
         prompt,
         [{ data: baseB64, mimeType: 'image/png' }],
-        { aspectRatio: '3:4' }
+        { aspectRatio }
     );
 
     if (result.type !== 'image') throw new Error('Vertical leg crop failed');
@@ -326,7 +405,14 @@ export async function regenerateImageWithSpecificPose(
 
 REFERENCE_IMAGE: [Provided image]`;
 
-    const config = options?.resolution === '4K' ? { imageSize: '4K' } : { imageSize: '1K' };
+    // Extract dimensions from base model to preserve aspect ratio
+    const dimensions = await extractImageDimensions(baseB64);
+    const aspectRatio = `${dimensions.width}:${dimensions.height}`;
+
+    const config = {
+        imageSize: options?.resolution === '4K' ? '4K' : '1K',
+        aspectRatio
+    };
 
     const result = await callGeminiSecure(
         prompt,
@@ -335,6 +421,70 @@ REFERENCE_IMAGE: [Provided image]`;
     );
 
     if (result.type !== 'image') throw new Error('Pose modification failed');
+    return { url: result.data, generatingParams: { pose } };
+}
+
+/**
+ * 🔐 클로즈업 전용 포즈 변형 생성 (하반신만 - 허리 아래)
+ */
+export async function regenerateCloseupWithVariation(
+    baseImageUrl: string,
+    pose: string,
+    options?: { resolution?: '1K' | '4K' }
+): Promise<ImageAsset> {
+    const baseB64 = await urlToBase64(baseImageUrl);
+
+    const prompt = `// --- TASK: CLOSEUP_LOWER_BODY_VARIATION ---
+// NEW POSE: ${pose}
+// RESOLUTION_MODE: ${options?.resolution || '4K'}
+// OUTPUT: Portrait (3:4).
+//
+// ⚠️ [ABSOLUTE FRAMING RULES - 절대 규칙] ⚠️
+// 1. **WAIST-DOWN ONLY**: Frame MUST start from WAIST/BELT LINE and go down to FEET.
+// 2. **NO UPPER BODY**: ABSOLUTELY NO HEAD, NO FACE, NO CHEST, NO SHOULDERS visible.
+// 3. **MANDATORY CROP**: The TOP of the image MUST be at the WAIST LEVEL.
+// 4. **SHOE FOCUS**: Shoes MUST be fully visible and be the main focus.
+// 5. **FRAME CHECK**: If any part ABOVE the waist is visible = FAILURE.
+//
+// [IMAGE QUALITY - 원본 화질 유지]
+// - **MATCH SOURCE QUALITY**: Output quality MUST match the input image quality EXACTLY.
+// - **ULTRA SHARP**: Crystal clear, razor-sharp focus. NO blur, NO haze, NO softness.
+// - **8K RESOLUTION**: Professional high-definition, ultra-detailed output.
+// - **PRESERVE TEXTURE**: Maintain all fabric textures, material details, surface quality.
+// - **CLEAN EDGES**: All edges must be crisp and well-defined.
+//
+// [STRICT PRESERVATION RULES]
+// 1. **SHOES**: Keep shoes 100% IDENTICAL - same design, color, details, texture.
+// 2. **PANTS/CLOTHING**: Keep lower body clothing EXACTLY the same - color, texture, fit.
+// 3. **BACKGROUND**: Keep background IDENTICAL to source.
+// 4. **LIGHTING**: Maintain IDENTICAL lighting as source - same shadows, highlights.
+//
+// [COMPOSITION - 구도]
+// - Show: Waist → Hips → Thighs → Knees → Shins → Ankles → Shoes
+// - The shoes should be at the bottom of the frame, fully visible.
+// - Natural, fashion editorial style leg positioning.
+//
+// [FORBIDDEN - 금지]
+// - ❌ NO upper body (chest, shoulders, arms, hands)
+// - ❌ NO face or head under any circumstances
+// - ❌ NO blurry or soft focus output
+// - ❌ NO quality degradation from source
+
+REFERENCE_IMAGE: [Use this as quality reference - match its sharpness and detail level]`;
+
+    // Force strict output size: 750x900
+    const config = {
+        imageSize: '1K',
+        aspectRatio: '750:900'
+    };
+
+    const result = await callGeminiSecure(
+        prompt,
+        [{ data: baseB64, mimeType: 'image/png' }],
+        config
+    );
+
+    if (result.type !== 'image') throw new Error('Closeup pose modification failed');
     return { url: result.data, generatingParams: { pose } };
 }
 
@@ -444,7 +594,7 @@ export async function generateBeautifiedShoe(shoeBase64: string, poseId: PoseVar
     let poseInstruction = '';
     switch (poseId) {
         case 'side_profile_single':
-            poseInstruction = `**VIEW:** Perfect Side Profile. ONE SINGLE SHOE. INSOLE NOT VISIBLE.`;
+            poseInstruction = `**VIEW:** Perfect Side Profile. ONE SINGLE SHOE. **MUST FACE LEFT** (Toe pointing LEFT). INSOLE NOT VISIBLE.`;
             break;
         case 'diagonal_front_single':
             poseInstruction = `**VIEW:** 45-degree Front Diagonal. ONE SINGLE SHOE. INSOLE NOT VISIBLE.`;
@@ -455,8 +605,8 @@ export async function generateBeautifiedShoe(shoeBase64: string, poseId: PoseVar
         case 'rear_view_pair':
             poseInstruction = `**VIEW:** Direct Rear View. PAIR OF SHOES. INSOLE NOT VISIBLE.`;
             break;
-        case 'top_closed_pair':
-            poseInstruction = `**VIEW:** Top-down view with CLOSED SHOES. INSOLE NOT VISIBLE.`;
+        case 'side_low_angle_single':
+            poseInstruction = `**VIEW:** Low angle side profile shot. ONE SINGLE SHOE. Camera positioned low, looking up at the shoe. INSOLE NOT VISIBLE.`;
             break;
         case 'front_view_pair':
             poseInstruction = `**VIEW:** Direct Front View. PAIR OF SHOES. INSOLE NOT VISIBLE.`;
@@ -572,7 +722,7 @@ const BEAUTIFY_POSES: PoseVariation[] = [
     'diagonal_front_single',
     'diagonal_back_pair',
     'rear_view_pair',
-    'top_closed_pair',
+    'side_low_angle_single',
     'front_view_pair',
 ];
 
@@ -634,7 +784,7 @@ export async function executeQuickTransferPipeline(
             let masterModelUrl = '';
             try {
                 if (options.studio) {
-                    masterModelUrl = await bringModelToStudio(modelUrl, shoeUrl, { resolution: options.resolution });
+                    masterModelUrl = await bringModelToStudio(modelUrl, shoeUrl, { resolution: options.resolution, customBackgroundUrl: options.customBackground });
                     usedPoses.add('Studio Front (Master)');
                 } else {
                     masterModelUrl = await regenerateShoesOnly(modelUrl, shoeUrl, { resolution: options.resolution });
@@ -649,25 +799,35 @@ export async function executeQuickTransferPipeline(
             }
 
             // 2. Generate Variations (Index 1+)
-            if (options.modelCuts > 1 && masterModelUrl) {
+            if (options.modelCuts > 1) {
                 const neededVars = options.modelCuts - 1;
-                const poses = getUniquePoses(neededVars, usedPoses);
 
-                for (let i = 0; i < neededVars; i++) {
-                    currentStep++;
-                    const pose = poses[i];
-                    onProgress?.(`모델컷 ${i + 2}/${options.modelCuts}: ${pose.name}`, currentStep, totalSteps);
+                if (masterModelUrl) {
+                    const poses = getUniquePoses(neededVars, usedPoses);
 
-                    try {
-                        const asset = await regenerateImageWithSpecificPose(masterModelUrl, pose.prompt, { resolution: options.resolution });
-                        result.modelCuts.push(asset.url);
-                        result.usedPoses.push(pose.name as PoseVariation); // Cast for type compatibility or update type
-                        onImageGenerated?.('modelCut', asset.url, i + 1, pose.name);
-                    } catch (error) {
-                        console.error(`Variation ${i + 1} failed:`, error);
-                        onImageGenerated?.('modelCut', 'error', i + 1, pose.name);
+                    for (let i = 0; i < neededVars; i++) {
+                        currentStep++;
+                        const pose = poses[i];
+                        onProgress?.(`모델컷 ${i + 2}/${options.modelCuts}: ${pose.name}`, currentStep, totalSteps);
+
+                        try {
+                            const asset = await regenerateImageWithSpecificPose(masterModelUrl, pose.prompt, { resolution: options.resolution });
+                            result.modelCuts.push(asset.url);
+                            result.usedPoses.push(pose.name as PoseVariation);
+                            onImageGenerated?.('modelCut', asset.url, i + 1, pose.name);
+                        } catch (error) {
+                            console.error(`Variation ${i + 1} failed:`, error);
+                            onImageGenerated?.('modelCut', 'error', i + 1, pose.name);
+                        }
+                        await delay(1000);
                     }
-                    await delay(1000);
+                } else {
+                    // Master failed, so all variations fail
+                    for (let i = 0; i < neededVars; i++) {
+                        currentStep++;
+                        onProgress?.(`모델컷 ${i + 2}/${options.modelCuts}: Skipped (Master Failed)`, currentStep, totalSteps);
+                        onImageGenerated?.('modelCut', 'error', i + 1, 'Skipped');
+                    }
                 }
             }
         }
@@ -684,7 +844,7 @@ export async function executeQuickTransferPipeline(
                 let sourceForCrop = result.modelCuts[0];
                 if (!sourceForCrop) {
                     sourceForCrop = options.studio
-                        ? await bringModelToStudio(modelUrl, shoeUrl, { resolution: options.resolution })
+                        ? await bringModelToStudio(modelUrl, shoeUrl, { resolution: options.resolution, customBackgroundUrl: options.customBackground })
                         : await regenerateShoesOnly(modelUrl, shoeUrl, { resolution: options.resolution });
                 }
 
@@ -699,32 +859,38 @@ export async function executeQuickTransferPipeline(
             }
 
             // 2. Generate Closeup Variations (Index 1+)
-            if (options.closeupCuts > 1 && masterCloseupUrl) {
+            if (options.closeupCuts > 1) {
                 const neededVars = options.closeupCuts - 1;
-                // We can reuse getUniquePoses but prompts might need adaptation for closeups?
-                // Actually, SAFE_POSE_VARIANTS are full body prompts.
-                // For closeups, we need specific closeup prompts or re-use specific list.
-                // Let's use CLOSEUP_POSE_VARIANTS but filtered or randomized if possible.
-                // Since user asked for unique poses generally, let's just cycle widely or define SAFE_CLOSEUP_VARIANTS.
-                // For now, let's use the existing CLOSEUP_POSE_VARIANTS as a pool but handle indices better.
 
-                // FIX: Use specific closeup list for now as SAFE_POSE_VARIANTS are full body
-                const closeupPool = CLOSEUP_POSE_VARIANTS;
+                if (masterCloseupUrl) {
+                    // Use random poses from 20 lower body poses
+                    const usedCloseupPoses = new Set<string>();
+                    usedCloseupPoses.add('Leg Crop (Master)'); // Master is already used
+                    const randomPoses = getRandomCloseupPoses(neededVars, usedCloseupPoses);
 
-                for (let i = 0; i < neededVars; i++) {
-                    currentStep++;
-                    const pose = closeupPool[i % closeupPool.length]; // Simple cycle for now as closeup vars are limited
-                    onProgress?.(`클로즈업 ${i + 2}/${options.closeupCuts}: ${pose.name}`, currentStep, totalSteps);
+                    for (let i = 0; i < neededVars; i++) {
+                        currentStep++;
+                        const pose = randomPoses[i] || CLOSEUP_LOWER_BODY_POSES[i % CLOSEUP_LOWER_BODY_POSES.length];
+                        onProgress?.(`클로즈업 ${i + 2}/${options.closeupCuts}: ${pose.name}`, currentStep, totalSteps);
 
-                    try {
-                        const asset = await regenerateImageWithSpecificPose(masterCloseupUrl, pose.prompt, { resolution: options.resolution });
-                        result.closeupCuts.push(asset.url);
-                        onImageGenerated?.('closeup', asset.url, i + 1, pose.name);
-                    } catch (error) {
-                        console.error(`Closeup Variation ${i + 1} failed:`, error);
-                        onImageGenerated?.('closeup', 'error', i + 1, pose.name);
+                        try {
+                            // Use closeup-specific variation function (lower body only)
+                            const asset = await regenerateCloseupWithVariation(masterCloseupUrl, pose.prompt, { resolution: options.resolution });
+                            result.closeupCuts.push(asset.url);
+                            onImageGenerated?.('closeup', asset.url, i + 1, pose.name);
+                        } catch (error) {
+                            console.error(`Closeup Variation ${i + 1} failed:`, error);
+                            onImageGenerated?.('closeup', 'error', i + 1, pose.name);
+                        }
+                        await delay(1000);
                     }
-                    await delay(1000);
+                } else {
+                    // Master failed, so all variations fail
+                    for (let i = 0; i < neededVars; i++) {
+                        currentStep++;
+                        onProgress?.(`클로즈업 ${i + 2}/${options.closeupCuts}: Skipped (Master Failed)`, currentStep, totalSteps);
+                        onImageGenerated?.('closeup', 'error', i + 1, 'Skipped');
+                    }
                 }
             }
         }

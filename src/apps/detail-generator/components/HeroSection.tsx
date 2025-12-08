@@ -30,12 +30,12 @@ const DEFAULT_ORDER = ['brandLine', 'productName', 'subName', 'stylingMatch', 'c
 
 // Default placeholder text for AI
 const DEFAULT_TEXT: Record<string, string> = {
-    brandLine: 'BRAND NAME',
-    productName: 'Sample Product',
-    subName: 'Color / Model',
-    stylingMatch: '🤖 AI가 검색 최적화 키워드로 스타일링 매치 정보를 자동 작성합니다',
-    craftsmanship: '🤖 AI가 소재와 제작 공정을 분석하여 상세 설명을 생성합니다',
-    technology: '🤖 AI가 제품 기술 특징을 분석하여 추천합니다',
+    brandLine: '브랜드명',
+    productName: '상품명을 입력하세요',
+    subName: '컬러 / 모델명',
+    stylingMatch: '설명: AI가 제품 분석 → 후킹 문장 자동 생성',
+    craftsmanship: '설명: HTML 내보내기 → 무신사/네이버 호환',
+    technology: '설명: AI 생성 시 자동 채워짐',
     sizeGuide: '🤖 AI가 사이즈 추천 및 가이드를 자동으로 작성합니다\n평소 신는 사이즈 그대로 추천드립니다',
 };
 

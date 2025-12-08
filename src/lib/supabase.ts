@@ -7,7 +7,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.warn('Supabase credentials missing - auth disabled');
 }
 
-export const supabase = createClient(
-    supabaseUrl || '',
-    supabaseAnonKey || ''
-);
+// Only create client if credentials are available, otherwise export null
+export const supabase = (supabaseUrl && supabaseAnonKey)
+    ? createClient(supabaseUrl, supabaseAnonKey)
+    : null;

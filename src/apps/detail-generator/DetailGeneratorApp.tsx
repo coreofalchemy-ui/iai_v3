@@ -203,7 +203,7 @@ export default function DetailGeneratorApp() {
 
     // Process shoes from navigation state on mount
     useEffect(() => {
-        if (!initialShoesProcessed && location.state?.shoes && location.state.shoes.length > 0) {
+        if (!initialShoesProcessed && location.state?.shoes && location.state.shoes.length > 0 && !location.state?.quickTransfer) {
             const shoes = location.state.shoes as { name: string; url: string }[];
 
             // Create sections for each shoe
@@ -265,7 +265,7 @@ export default function DetailGeneratorApp() {
                         ...newImageUrls
                     },
                     sectionOrder: newSections,
-                    productFiles: [...(prev.productFiles || []), ...productFilesFromBlob]
+                    productFiles: productFilesFromBlob
                 }));
                 setSectionOrder(newSections);
                 setSectionHeights(prev => ({ ...prev, ...newHeights }));

@@ -28,13 +28,17 @@ export const generateSizeGuideSketch = async (shoeImageBase64: string): Promise<
 2. **NO SHADING**: Do NOT use grayscale shading or gradients. Just black lines on white background.
 3. **ORIENTATION**: The shoe MUST face LEFT (Toe pointing Left).
 4. **VIEW**: LATERAL (OUTER) Side Profile ONLY. Never inner/medial side.
-5. **DETAIL_LEVEL**: Minimalist. Only essential contour lines.
+5. **SIZE**: The sketch should occupy approximately 70-80% of the canvas area, centered. Maintain consistent sizing.
+6. **DETAIL_LEVEL**: Minimalist. Only essential contour lines.
 
 [STRICT CONSTRAINT]
 - Output must look like a technical patent drawing.
 - White background (#FFFFFF).
 - Black stroke (#000000).
 - Show the OUTER side of the shoe, not the inner side with zipper or closure.
+- **Orientation**: LEFT-FACING (Toe to the Left).
+- **PADDING**: Keep 20% white space padding on all sides.
+- **SCALING**: Drawing must NOT touch edges. Scale down to fit 60-70% of canvas center.
 `;
 
     const result = await callGeminiSecure(

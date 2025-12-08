@@ -136,6 +136,11 @@ export async function callGeminiSecure(
         data: await optimizeImage(img.data)
     })));
 
+    // Determine modelType based on whether images are present OR if image generation config is detected
+    // If images are provided OR aspectRatio/imageSize is set, use image generation model
+    const isImageGeneration = optimizedImages.length > 0 || config?.aspectRatio || config?.imageSize;
+    const modelType = isImageGeneration ? 'image-std' : 'text';
+
     const response = await fetch(API_ENDPOINT, {
         method: 'POST',
         headers,
@@ -144,6 +149,7 @@ export async function callGeminiSecure(
             images: optimizedImages,
             config,
             systemInstruction,
+            modelType, // Explicitly specify model type
         }),
     });
 

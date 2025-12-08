@@ -4,7 +4,32 @@ import dotenv from 'dotenv';
 // Use the stable GA SDK
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-dotenv.config();
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Manually load .env file to bypass dotenv@17 auto-loading issues
+const envPath = path.resolve(__dirname, '.env');
+try {
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    envContent.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+            const [key, ...valueParts] = trimmed.split('=');
+            if (key && valueParts.length > 0) {
+                process.env[key.trim()] = valueParts.join('=').trim();
+            }
+        }
+    });
+    console.log('.env loaded successfully from:', envPath);
+} catch (err) {
+    console.error('Failed to load .env:', err.message);
+}
+
+console.log('API Key:', process.env.GEMINI_API_KEY ? 'OK (length: ' + process.env.GEMINI_API_KEY.length + ')' : 'MISSING!');
 
 const app = express();
 const PORT = 3001;
@@ -17,8 +42,8 @@ app.use(cors());
 // ⚠️ WARNING: DO NOT MODIFY THESE MODEL NAMES WITHOUT EXPLICIT USER CONSENT ⚠️
 // ⚠️ 수정 금지: 사용자 허락 없이 이 모델 설정을 변경하면 안 됩니다. ⚠️
 const MODEL_TEXT = 'gemini-2.5-flash';
-const MODEL_IMAGE_STD = 'gemini-2.5-flash-preview-image'; // Default Image Model
-const MODEL_IMAGE_HQ = 'gemini-3-pro-image'; // Only for 4K Mode
+const MODEL_IMAGE_STD = 'gemini-2.5-flash-image-preview'; // Nano Banana (renamed from preview-image to image-preview)
+const MODEL_IMAGE_HQ = 'gemini-3-pro-image-preview'; // Nano Banana Pro
 
 console.log('Gemini API Server starting... (Multi-Model Support)');
 console.log(`Text Model: ${MODEL_TEXT}`);
@@ -95,9 +120,13 @@ app.post('/api/gemini', async (req, res) => {
             systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined
         });
 
-        const generationConfig = {
-            ...reqConfig,
-        };
+        // Filter out unsupported fields from generationConfig
+        const generationConfig = { ...reqConfig };
+
+        // aspectRatio and imageSize are NOT supported in generationConfig for any model
+        // They are client-side settings only
+        delete generationConfig.aspectRatio;
+        delete generationConfig.imageSize;
 
         const result = await model.generateContent({
             contents: [{ role: 'user', parts: parts }],
@@ -105,13 +134,34 @@ app.post('/api/gemini', async (req, res) => {
         });
 
         const response = await result.response;
-        const text = response.text();
 
-        // Standardize response format for frontend
-        const responseData = {
-            type: 'text',
-            data: text
-        };
+        // Process response - check for image or text
+        let responseData = { type: 'text', data: '' };
+
+        const candidate = response.candidates?.[0];
+        if (candidate?.content?.parts) {
+            for (const part of candidate.content.parts) {
+                if (part.inlineData) {
+                    // Image response
+                    responseData = {
+                        type: 'image',
+                        data: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`,
+                    };
+                    break;
+                } else if (part.text) {
+                    responseData = {
+                        type: 'text',
+                        data: part.text,
+                    };
+                }
+            }
+        } else {
+            // Fallback to text() method
+            responseData = {
+                type: 'text',
+                data: response.text()
+            };
+        }
 
         return res.json(responseData);
 

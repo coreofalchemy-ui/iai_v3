@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { generateFaceBatch, upscaleFace, batchFaceReplacement } from '../services/geminiService';
+import { generateFaceBatch, upscaleFace, generateBaseModelFromFace } from '../services/geminiService';
 import { FILTER_PRESETS, FilterPresetName } from '../services/photoFilterService';
 
 const colors = { bgBase: '#F5F5F7', bgSurface: '#FFFFFF', bgSubtle: '#F0F0F4', borderSoft: '#E2E2E8', textPrimary: '#111111', textSecondary: '#6E6E73', textMuted: '#A1A1AA', accentPrimary: '#111111' };
@@ -97,11 +97,13 @@ export default function ModelChapterPanel({
 
         const targetImageUrls: string[] = [];
         const imageUrls = data.imageUrls || {};
+        const sectionIdList: string[] = [];
 
         heldSections.forEach(sectionId => {
             const url = imageUrls[sectionId];
             if (url && typeof url === 'string' && (url.startsWith('data:') || url.startsWith('http'))) {
                 targetImageUrls.push(url);
+                sectionIdList.push(sectionId);
             }
         });
 
@@ -114,45 +116,48 @@ export default function ModelChapterPanel({
         setReplaceProgress({ current: 0, total: targetImageUrls.length });
 
         try {
-            const results = await batchFaceReplacement(targetImageUrls, selectedFace, (current, total) => setReplaceProgress({ current, total }));
+            // ★ 각 홀드된 이미지를 레퍼런스로 사용하여 모델 생성
+            const results: Array<{ original: string; result: string | null; sectionId: string }> = [];
+
+            for (let i = 0; i < targetImageUrls.length; i++) {
+                const referenceUrl = targetImageUrls[i];
+                setReplaceProgress({ current: i + 1, total: targetImageUrls.length });
+
+                try {
+                    // 선택된 얼굴 + 레퍼런스 이미지(착장/비율/배경)로 모델 생성
+                    const finalImage = await generateBaseModelFromFace(
+                        selectedFace,
+                        referenceUrl,
+                        gender === 'male' ? 'm' : 'w'
+                    );
+                    results.push({ original: referenceUrl, result: finalImage, sectionId: sectionIdList[i] });
+                } catch (e) {
+                    console.error(`❌ 모델 생성 실패 (${i + 1}):`, e);
+                    results.push({ original: referenceUrl, result: null, sectionId: sectionIdList[i] });
+                }
+            }
 
             const newImageUrls = { ...imageUrls };
             const addedSectionsMap = new Map<string, string[]>();
-
-            const urlToSectionIds = new Map<string, string[]>();
-            heldSections.forEach(sid => {
-                const url = imageUrls[sid];
-                if (url) {
-                    const list = urlToSectionIds.get(url) || [];
-                    list.push(sid);
-                    urlToSectionIds.set(url, list);
-                }
-            });
 
             let successCount = 0;
 
             results.forEach((result) => {
                 if (result.result) {
-                    const originalUrl = result.original;
-                    const sectionIds = urlToSectionIds.get(originalUrl);
+                    const originalSid = result.sectionId;
+                    const newSid = `face-gen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    newImageUrls[newSid] = result.result;
 
-                    if (sectionIds) {
-                        sectionIds.forEach(originalSid => {
-                            const newSid = `face-gen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                            newImageUrls[newSid] = result.result;
-
-                            // Inherit height from original section
-                            if (sectionHeights && onUpdateSectionHeight && sectionHeights[originalSid]) {
-                                onUpdateSectionHeight(newSid, sectionHeights[originalSid]);
-                            }
-
-                            const list = addedSectionsMap.get(originalSid) || [];
-                            list.push(newSid);
-                            addedSectionsMap.set(originalSid, list);
-
-                            successCount++;
-                        });
+                    // Inherit height from original section
+                    if (sectionHeights && onUpdateSectionHeight && sectionHeights[originalSid]) {
+                        onUpdateSectionHeight(newSid, sectionHeights[originalSid]);
                     }
+
+                    const list = addedSectionsMap.get(originalSid) || [];
+                    list.push(newSid);
+                    addedSectionsMap.set(originalSid, list);
+
+                    successCount++;
                 }
             });
 
@@ -306,29 +311,32 @@ export default function ModelChapterPanel({
                         )}
 
                         {selectedFace && (
-                            <div className="flex gap-2">
-                                {!upscaledFace && !isUpscaling && (
-                                    <button onClick={async () => { if (!selectedFace) return; setIsUpscaling(true); try { const upscaled = await upscaleFace(selectedFace); setUpscaledFace(upscaled); } catch (e) { console.error(e); alert('Upscaling failed'); } finally { setIsUpscaling(false); } }} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 11, fontWeight: 500, background: 'transparent', border: `1px solid ${colors.borderSoft}`, color: colors.textPrimary }}>4K 업스케일</button>
-                                )}
-                                <button onClick={async () => { const targetUrl = upscaledFace || selectedFace; if (!targetUrl) return; const res = await fetch(targetUrl); const blob = await res.blob(); const file = new File([blob], `generated_face_${Date.now()}.png`, { type: 'image/png' }); const currentModelFiles = data.modelFiles || []; const newFileUrl = URL.createObjectURL(file); onUpdate({ ...data, modelFiles: [...currentModelFiles, file], imageUrls: { ...data.imageUrls, modelShots: [...(data.imageUrls?.modelShots || []), newFileUrl] } }); alert('모델 목록에 추가됨'); }} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 11, fontWeight: 500, background: colors.accentPrimary, color: '#FFF' }}>목록에 추가</button>
-                            </div>
-                        )}
-
-                        {upscaledFace && (
-                            <div style={{ borderTop: `1px solid ${colors.borderSoft}`, paddingTop: 12 }}>
-                                <span style={{ fontSize: 10, color: colors.textMuted }} className="mb-2 block">4K 업스케일 비교</span>
-                                <div ref={sliderRef} className="relative w-full aspect-square rounded-lg overflow-hidden cursor-col-resize" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove}>
-                                    <img src={selectedFace} className="absolute inset-0 w-full h-full object-cover" alt="Original" />
-                                    <div className="absolute inset-0 w-full h-full overflow-hidden border-r-2 border-white/80" style={{ width: `${compareSlider}%` }}>
-                                        <img src={upscaledFace} className="absolute top-0 left-0 max-w-none h-full object-cover" style={{ width: sliderRef.current?.offsetWidth }} alt="Upscaled" />
-                                    </div>
-                                    <div className="absolute top-0 bottom-0 w-0.5 bg-white z-10" style={{ left: `${compareSlider}%` }}>
-                                        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow"><span className="text-[10px] text-gray-700">↔</span></div>
-                                    </div>
-                                    <div className="absolute top-2 left-2 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded">4K</div>
-                                    <div className="absolute top-2 right-2 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded">원본</div>
-                                </div>
-                            </div>
+                            <button
+                                onClick={() => {
+                                    const a = document.createElement('a');
+                                    a.href = selectedFace;
+                                    a.download = `model_face_${Date.now()}.png`;
+                                    a.click();
+                                }}
+                                style={{
+                                    width: '100%',
+                                    marginTop: 8,
+                                    padding: 10,
+                                    borderRadius: 8,
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    background: 'transparent',
+                                    border: `1px solid ${colors.borderSoft}`,
+                                    color: colors.textPrimary,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 6
+                                }}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                이미지 다운로드 (Download)
+                            </button>
                         )}
                     </div>
                 )}

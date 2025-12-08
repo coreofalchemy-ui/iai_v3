@@ -161,10 +161,22 @@ ${genderNote}
 [NEW POSE TO APPLY]
 ${pose.description}
 
+[IMAGE QUALITY - 매우 중요]
+- **SHARP FOCUS**: Image MUST be crystal clear, NOT blurry or hazy.
+- **HIGH RESOLUTION**: Ultra-high definition, 8K quality, professional photography.
+- **CLEAN EDGES**: All edges and details must be crisp and well-defined.
+- **NO BLUR**: Absolutely NO motion blur, focus blur, or softness.
+
+[NATURAL POSE RULES - 자연스러운 자세]
+- **NATURAL LEG POSITIONING**: Legs should be naturally positioned, NOT unnaturally wide apart.
+- **FASHION EDITORIAL STYLE**: Natural, elegant poses like professional fashion magazine shoots.
+- **AVOID AWKWARD STANCES**: No exaggerated or uncomfortable-looking leg spreads.
+- **COMFORTABLE POSTURE**: The model should look relaxed and natural, not stiff or forced.
+
 [STYLE]
 - High-end fashion photography
 - Professional studio lighting
-- 8K resolution, photorealistic
+- 8K resolution, photorealistic, razor-sharp focus
 `;
 
     const result = await callGeminiSecure(

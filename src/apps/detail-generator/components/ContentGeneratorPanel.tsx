@@ -15,6 +15,9 @@ interface ContentGeneratorPanelProps {
     lang?: 'ko' | 'en';
     savedResults?: string[];
     onUpdateResults?: (results: string[]) => void;
+    // New props for state persistence
+    savedSourceImages?: string[]; // stored as Data URLs for persistence
+    onUpdateSourceImages?: (images: string[]) => void;
 }
 
 export default function ContentGeneratorPanel({
@@ -23,17 +26,30 @@ export default function ContentGeneratorPanel({
     onAddToPreview,
     savedResults = [],
     onUpdateResults,
+    savedSourceImages = [],
+    onUpdateSourceImages,
     lang = 'ko'
 }: ContentGeneratorPanelProps) {
-    const [sourceImages, setSourceImages] = useState<File[]>([]);
-    const [sourcePreviews, setSourcePreviews] = useState<string[]>([]);
+    // We now use Data URLs (strings) instead of File objects for easier persistence in JSON state
+    const [localSourceImages, setLocalSourceImages] = useState<string[]>([]);
+
+    // Determine source of truth
+    const sourceImages = onUpdateSourceImages ? savedSourceImages : localSourceImages;
+    const setSourceImages = (newImages: string[]) => {
+        if (onUpdateSourceImages) {
+            onUpdateSourceImages(newImages);
+        } else {
+            setLocalSourceImages(newImages);
+        }
+    };
+
     const [sourceDragActive, setSourceDragActive] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string>('');
     const [progressMessage, setProgressMessage] = useState<string>('');
     const sourceInputRef = useRef<HTMLInputElement>(null);
 
-    // Use props for persistence if available, otherwise local state (fallback)
+    // Results persistence
     const [localResults, setLocalResults] = useState<string[]>([]);
     const activeResults = onUpdateResults ? savedResults : localResults;
     const setActiveResults = (newResults: string[]) => {
@@ -44,12 +60,45 @@ export default function ContentGeneratorPanel({
         }
     };
 
-    const handleFileSelect = (files: FileList | File[]) => {
-        const validFiles = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, 10 - sourceImages.length);
-        if (validFiles.length === 0) return;
-        const newFiles = [...sourceImages, ...validFiles].slice(0, 10);
-        setSourceImages(newFiles);
-        setSourcePreviews(newFiles.map(f => URL.createObjectURL(f)));
+    // Helper to read file as Data URL
+    const fileToDataUrl = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const handleFileSelect = async (files: FileList | File[]) => {
+        const incomingFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+        if (incomingFiles.length === 0) return;
+
+        // Convert key info for duplicate checking (approximate since we don't have file objects for persisted strings)
+        // For persisted strings (data URLs), we can't easily check name/size against new Files.
+        // However, we can check if the *content* matches by converting new files to data URLs.
+
+        const newImageUrls: string[] = [];
+
+        for (const file of incomingFiles) {
+            try {
+                const dataUrl = await fileToDataUrl(file);
+                // Check for duplicates in existing sourceImages
+                // This is an expensive check (string comparison of large base64) but accurate and necessary
+                const isDuplicate = sourceImages.some(existingUrl => existingUrl === dataUrl);
+
+                if (!isDuplicate) {
+                    newImageUrls.push(dataUrl);
+                }
+            } catch (e) {
+                console.error("Failed to read file:", e);
+            }
+        }
+
+        if (newImageUrls.length === 0) return;
+
+        const updatedImages = [...sourceImages, ...newImageUrls].slice(0, 10);
+        setSourceImages(updatedImages);
     };
 
     const handleSourceInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files) handleFileSelect(e.target.files); };
@@ -58,8 +107,9 @@ export default function ContentGeneratorPanel({
     const handleDrop = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); setSourceDragActive(false); if (e.dataTransfer.files) handleFileSelect(e.dataTransfer.files); };
 
     const removeImage = (index: number) => {
-        const newFiles = [...sourceImages]; newFiles.splice(index, 1);
-        setSourceImages(newFiles); setSourcePreviews(newFiles.map(f => URL.createObjectURL(f)));
+        const newImages = [...sourceImages];
+        newImages.splice(index, 1);
+        setSourceImages(newImages);
     };
 
     const handleGenerateShoeSwap = async () => {
@@ -75,13 +125,11 @@ export default function ContentGeneratorPanel({
             for (let i = 0; i < sourceImages.length; i++) {
                 console.log(`[ContentGeneratorPanel] Processing image ${i + 1}/${sourceImages.length}`);
                 setProgressMessage(`신발 교체 중... ${i + 1}/${sourceImages.length}`);
-                const file = sourceImages[i];
-                const reader = new FileReader();
-                const sourceDataUrl = await new Promise<string>((resolve) => { reader.onload = (e) => resolve(e.target?.result as string); reader.readAsDataURL(file); });
-                console.log('[ContentGeneratorPanel] Source Data URL length:', sourceDataUrl.length); // Source data check
-                console.log('[ContentGeneratorPanel] Product Image URL:', productImages[0]);
 
-                // Use 'replacement' logic (which uses the updated prompt in service)
+                // sourceImages are now Data URLs directly
+                const sourceDataUrl = sourceImages[i];
+
+                // Use 'replacement' logic
                 const imageUrl = await synthesizeShoeStudio(productImages[0], sourceDataUrl, 'minimal');
 
                 // --- DEBUGGING LOGS ---
@@ -128,9 +176,9 @@ export default function ContentGeneratorPanel({
                     onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
                 >
                     <input ref={sourceInputRef} type="file" accept="image/*" multiple onChange={handleSourceInputChange} className="hidden" />
-                    {sourcePreviews.length > 0 ? (
+                    {sourceImages.length > 0 ? (
                         <div className="grid grid-cols-4 gap-1.5">
-                            {sourcePreviews.map((preview, i) => (
+                            {sourceImages.map((preview, i) => (
                                 <div key={i} className="relative aspect-square">
                                     <img src={preview} alt={`Content ${i + 1}`} className="w-full h-full object-cover rounded-lg" />
                                     <button onClick={(e) => { e.stopPropagation(); removeImage(i); }} className="absolute top-0.5 right-0.5 bg-black/60 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] hover:bg-red-500">×</button>

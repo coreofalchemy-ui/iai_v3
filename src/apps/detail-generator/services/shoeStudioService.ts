@@ -18,7 +18,124 @@ export interface StudioOptions {
 }
 
 /**
+ * 이미지의 비율 분석 (세로형, 정사각형, 가로형)
+ */
+const getImageAspectFromDataUrl = (dataUrl: string): Promise<{
+    aspectRatio: string;
+    orientation: 'portrait' | 'square' | 'landscape';
+    promptRatio: string;
+    width: number;
+    height: number;
+    ratio: number;
+}> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const width = img.width;
+            const height = img.height;
+            const ratio = width / height;
+
+            let result;
+            if (ratio < 0.9) {
+                // 세로형 (Portrait)
+                result = {
+                    aspectRatio: '3:4',
+                    orientation: 'portrait' as const,
+                    promptRatio: 'PORTRAIT (Vertical, taller than wide, approximately 3:4 ratio)',
+                    width,
+                    height,
+                    ratio
+                };
+            } else if (ratio > 1.1) {
+                // 가로형 (Landscape)
+                result = {
+                    aspectRatio: '4:3',
+                    orientation: 'landscape' as const,
+                    promptRatio: 'LANDSCAPE (Horizontal, wider than tall, approximately 4:3 ratio)',
+                    width,
+                    height,
+                    ratio
+                };
+            } else {
+                // 정사각형 (Square)
+                result = {
+                    aspectRatio: '1:1',
+                    orientation: 'square' as const,
+                    promptRatio: 'SQUARE (Equal width and height, 1:1 ratio)',
+                    width,
+                    height,
+                    ratio
+                };
+            }
+
+            console.log(`[getImageAspectFromDataUrl] Detected: ${result.orientation} (${width}x${height}, ratio: ${ratio.toFixed(2)})`);
+            resolve(result);
+        };
+        img.onerror = () => reject(new Error('Failed to load image for aspect analysis'));
+        img.src = dataUrl;
+    });
+};
+
+/**
+ * 🔒 생성된 이미지를 모델 이미지의 정확한 크기로 강제 리사이즈 (HARD LOCK)
+ * AI가 어떤 비율로 생성하든 상관없이, 출력은 항상 모델 이미지 크기와 동일
+ */
+const forceResizeToExactDimensions = (
+    generatedImageDataUrl: string,
+    targetWidth: number,
+    targetHeight: number
+): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const srcWidth = img.width;
+            const srcHeight = img.height;
+
+            console.log(`[forceResize] HARD LOCK: Source ${srcWidth}x${srcHeight} → Target ${targetWidth}x${targetHeight}`);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+
+            if (!ctx) {
+                reject(new Error('Could not get canvas context'));
+                return;
+            }
+
+            // 중앙 기준 크롭 후 리사이즈
+            const srcRatio = srcWidth / srcHeight;
+            const targetRatio = targetWidth / targetHeight;
+
+            let cropX = 0, cropY = 0, cropW = srcWidth, cropH = srcHeight;
+
+            if (srcRatio > targetRatio) {
+                // 소스가 더 넓음 → 좌우 크롭
+                cropW = Math.round(srcHeight * targetRatio);
+                cropX = Math.round((srcWidth - cropW) / 2);
+            } else if (srcRatio < targetRatio) {
+                // 소스가 더 좁음 → 상하 크롭
+                cropH = Math.round(srcWidth / targetRatio);
+                cropY = Math.round((srcHeight - cropH) / 2);
+            }
+
+            console.log(`[forceResize] Crop: (${cropX},${cropY}) ${cropW}x${cropH} → Resize: ${targetWidth}x${targetHeight}`);
+
+            // 크롭된 부분을 정확한 타겟 크기로 리사이즈
+            ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, targetWidth, targetHeight);
+
+            const resultDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+            console.log(`[forceResize] ✓ HARD LOCKED to ${targetWidth}x${targetHeight}`);
+            resolve(resultDataUrl);
+        };
+        img.onerror = () => reject(new Error('Failed to load image for resizing'));
+        img.src = generatedImageDataUrl;
+    });
+};
+
+/**
  * 🔐 신발 스튜디오 합성 (보안)
+ * 모델 이미지의 원본 비율을 유지합니다.
  */
 export async function synthesizeShoeStudio(
     shoeImageUrl: string,
@@ -27,6 +144,23 @@ export async function synthesizeShoeStudio(
 ): Promise<string> {
     const shoePart = await urlToGeminiPart(shoeImageUrl);
     const modelPart = await urlToGeminiPart(modelImageUrl);
+
+    // 모델 이미지의 비율 분석
+    let aspectInfo;
+    try {
+        aspectInfo = await getImageAspectFromDataUrl(modelImageUrl);
+        console.log(`[synthesizeShoeStudio] Model image aspect: ${aspectInfo.orientation} (${aspectInfo.width}x${aspectInfo.height})`);
+    } catch (e) {
+        console.warn('[synthesizeShoeStudio] Could not analyze model image aspect, defaulting to portrait');
+        aspectInfo = {
+            aspectRatio: '3:4',
+            orientation: 'portrait' as const,
+            promptRatio: 'PORTRAIT (Vertical, taller than wide, approximately 3:4 ratio)',
+            width: 0,
+            height: 0,
+            ratio: 0.75 // 3:4 portrait ratio
+        };
+    }
 
     let scenePrompt = '';
     switch (effect) {
@@ -49,26 +183,35 @@ export async function synthesizeShoeStudio(
             scenePrompt = `**SCENE:** Modern studio with soft lighting.`;
     }
 
-    const prompt = `// --- PROTOCOL: PRECISE_SHOE_REPLACEMENT (SECURE) ---
-// TARGET: Replace the shoes in the MODEL_IMAGE with the shoe from PRODUCT_IMAGE.
+    const prompt = `// === SHOE SWAP TASK ===
+// OUTPUT SIZE: ${aspectInfo.width}x${aspectInfo.height} pixels (EXACT)
 
-**[CRITICAL INSTRUCTIONS]**
-1. **PRESERVE SCENE:** You must keep the MODEL_IMAGE's background, lighting, and model appearance EXACTLY as is. Do NOT generate a new studio background.
-2. **PRECISE SWAP:** Detect the shoes in MODEL_IMAGE and replace ONLY them with the PRODUCT_IMAGE shoe.
-3. **IDENTITY LOCK:** The new shoe must be pixel-perfect identical to the PRODUCT_IMAGE (color, texture, shape).
-4. **INTEGRATION:** Match the lighting, shadows, and perspective of the original scene so the replacement looks completely natural.
-5. **OUTPUT:** Return the full image with the shoe replaced.
+**TASK**: Generate a NEW image at EXACTLY ${aspectInfo.width}x${aspectInfo.height} pixels.
 
-PRODUCT_IMAGE: [First image - The new shoe]
-MODEL_IMAGE: [Second image - The original photo to edit]`;
+**WHAT TO DO**:
+1. Create a model wearing the SHOE from Image 1
+2. The model should match the POSE and OUTFIT from Image 2
+3. Generate a CLEAN STUDIO BACKGROUND (NOT copying Image 2's background)
+4. Output MUST be ${aspectInfo.width}x${aspectInfo.height} pixels
+
+**SHOE (Image 1)**: Copy this shoe EXACTLY - same color, texture, shape
+
+**MODEL REFERENCE (Image 2)**: Copy the model's:
+- Body pose and proportions
+- Outfit/clothing (everything except shoes)
+- Face and hair
+
+**BACKGROUND**: Generate a new clean studio background. Do NOT copy the background from Image 2.
+
+**CRITICAL OUTPUT SIZE**: The final image MUST be ${aspectInfo.promptRatio} format, sized to ${aspectInfo.width}x${aspectInfo.height} pixels.`;
 
     const result = await callGeminiSecure(
         prompt,
         [
             shoePart,
             modelPart
-        ],
-        { aspectRatio: '3:4' }
+        ]
+        // aspectRatio 제거 - 프롬프트로 비율 지정
     );
 
     console.log('[ShoeStudioService] synthesizeShoeStudio result type:', result.type);
@@ -83,7 +226,23 @@ MODEL_IMAGE: [Second image - The original photo to edit]`;
         console.warn('[ShoeStudioService] Warning: Result data seems too short:', result.data);
     }
 
-    return result.data;
+    // 🔒 HARD LOCK 후처리: 생성된 이미지를 모델 이미지의 정확한 크기로 강제 리사이즈
+    console.log(`[ShoeStudioService] HARD LOCK: Forcing output to ${aspectInfo.width}x${aspectInfo.height}...`);
+    const generatedImageDataUrl = result.data;
+
+    try {
+        // 🔥 모델 이미지의 정확한 픽셀 크기로 강제 리사이즈
+        const resizedImage = await forceResizeToExactDimensions(
+            generatedImageDataUrl,
+            aspectInfo.width,
+            aspectInfo.height
+        );
+        console.log(`[ShoeStudioService] ✓ HARD LOCKED to ${aspectInfo.width}x${aspectInfo.height}`);
+        return resizedImage;
+    } catch (resizeError) {
+        console.warn('[ShoeStudioService] Resize failed, returning original:', resizeError);
+        return result.data;
+    }
 }
 
 /**

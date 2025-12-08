@@ -5,9 +5,12 @@
 
 import { callGeminiSecure } from '../../../lib/geminiClient';
 
-// Target dimensions for Fashion Detail Pages (1:1 Square)
+// Target dimensions for Fashion Detail Pages (1:1 Square) - 기본값
 const TARGET_WIDTH = 1400;
 const TARGET_HEIGHT = 1400;
+
+// 최대 해상도 (긴 쪽 기준)
+const MAX_DIMENSION = 1400;
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -29,6 +32,7 @@ export interface GenerationResult {
     success: boolean;
     imageBase64?: string;
     error?: string;
+    aspectRatio?: string; // 원본 비율 정보 추가
 }
 
 // ============================================================================
@@ -45,7 +49,91 @@ export const fileToBase64 = (file: File): Promise<string> => {
 };
 
 /**
- * prepareImageForAi - Black Bar Padding
+ * 이미지의 가로/세로 비율 분석 (세로형, 정사각형, 가로형)
+ */
+export const getImageAspectInfo = (width: number, height: number): {
+    aspectRatio: string;
+    orientation: 'portrait' | 'square' | 'landscape';
+    promptRatio: string;
+} => {
+    const ratio = width / height;
+
+    if (ratio < 0.9) {
+        // 세로형 (Portrait)
+        return {
+            aspectRatio: '3:4',
+            orientation: 'portrait',
+            promptRatio: 'PORTRAIT (Vertical, taller than wide, approximately 3:4 ratio)'
+        };
+    } else if (ratio > 1.1) {
+        // 가로형 (Landscape)
+        return {
+            aspectRatio: '4:3',
+            orientation: 'landscape',
+            promptRatio: 'LANDSCAPE (Horizontal, wider than tall, approximately 4:3 ratio)'
+        };
+    } else {
+        // 정사각형 (Square)
+        return {
+            aspectRatio: '1:1',
+            orientation: 'square',
+            promptRatio: 'SQUARE (Equal width and height, 1:1 ratio)'
+        };
+    }
+};
+
+/**
+ * prepareImageKeepAspectRatio - 원본 비율 유지하면서 리사이징
+ * 배경이미지 무시하고 모델 이미지 비율 그대로 유지
+ */
+export const prepareImageKeepAspectRatio = (file: File): Promise<{ base64: string; aspectInfo: ReturnType<typeof getImageAspectInfo> }> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const imgW = img.width;
+                const imgH = img.height;
+
+                // 비율 정보 분석
+                const aspectInfo = getImageAspectInfo(imgW, imgH);
+
+                // 긴 쪽을 MAX_DIMENSION으로 맞추고 비율 유지
+                let newWidth: number, newHeight: number;
+                if (imgW > imgH) {
+                    newWidth = Math.min(imgW, MAX_DIMENSION);
+                    newHeight = Math.round(newWidth * (imgH / imgW));
+                } else {
+                    newHeight = Math.min(imgH, MAX_DIMENSION);
+                    newWidth = Math.round(newHeight * (imgW / imgH));
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = newWidth;
+                canvas.height = newHeight;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return reject(new Error('Could not get canvas context.'));
+
+                ctx.drawImage(img, 0, 0, imgW, imgH, 0, 0, newWidth, newHeight);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+
+                console.log(`[prepareImageKeepAspectRatio] Original: ${imgW}x${imgH}, Resized: ${newWidth}x${newHeight}, Orientation: ${aspectInfo.orientation}`);
+
+                resolve({
+                    base64: dataUrl.split('base64,')[1],
+                    aspectInfo
+                });
+            };
+            img.onerror = reject;
+            img.src = event.target?.result as string;
+        };
+        reader.onerror = reject;
+    });
+};
+
+/**
+ * prepareImageForAi - Black Bar Padding (기존 함수 유지, 정사각형 필요시 사용)
  */
 export const prepareImageForAi = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -142,7 +230,8 @@ const enforceAspectRatio = (
 export const generateCampaignImage = async (
     sourceImageBase64: string,
     productImagesBase64: string[],
-    colorSettings?: ColorSettings
+    colorSettings?: ColorSettings,
+    aspectInfo?: ReturnType<typeof getImageAspectInfo> // 모델 이미지 비율 정보
 ): Promise<GenerationResult> => {
 
     let additionalInstructions = "";
@@ -153,13 +242,18 @@ export const generateCampaignImage = async (
         if (colorSettings.socks) additionalInstructions += `- Change Socks color to ${colorSettings.socks}.\n`;
     }
 
+    // 모델 이미지 비율에 따른 출력 지시
+    const outputRatioInstruction = aspectInfo
+        ? `**OUTPUT ASPECT RATIO**: ${aspectInfo.promptRatio}. The output image MUST match the aspect ratio of the MODEL IMAGE (Image 1). Ignore any background image ratios.`
+        : `**OUTPUT**: 1:1 Square Image.`;
+
     const EDITING_PROMPT = `
 [ROLE] Expert Product Retoucher & Digital Twin Specialist
 [TASK] High-Fidelity Shoe Replacement (Pixel-Perfect Cloning)
 
 [INPUTS]
-- Image 1: TARGET MODEL (Contains BLACK BARS/VOID for Outpainting).
-- Image 2+: SOURCE PRODUCT IMAGES.
+- Image 1: TARGET MODEL (The model person wearing clothes - USE THIS IMAGE'S ASPECT RATIO FOR OUTPUT).
+- Image 2+: SOURCE PRODUCT IMAGES (shoes/products to clone).
 
 [CRITICAL INSTRUCTION: ZERO TOLERANCE FOR HALLUCINATION]
 You are a **PHOTOCOPIER**. **CLONE** the shoes from Image 2 onto the feet in Image 1.
@@ -172,14 +266,16 @@ You are a **PHOTOCOPIER**. **CLONE** the shoes from Image 2 onto the feet in Ima
 [PHASE 2: SCENE INTEGRATION]
 1. **GEOMETRY WARP**: Fit shoe to perspective of feet.
 2. **LIGHTING MATCH**: Apply lighting/shadows from Image 1.
-3. **OUTPAINTING**: Fill black bars with realistic studio background.
+3. **BACKGROUND**: Keep or extend the background from Image 1.
 
 ${additionalInstructions ? `[ADDITIONAL EDITS]\n${additionalInstructions}` : ''}
 
-[CONSTRAINTS]
-- **OUTPUT**: 1:1 Square Image. NO BLACK BARS.
+[CONSTRAINTS - CRITICAL]
+- ${outputRatioInstruction}
+- **ASPECT RATIO LOCK**: The output MUST have the SAME aspect ratio as the MODEL IMAGE (Image 1). Do NOT change to landscape or square if the model image is portrait.
 - **SHARPNESS**: Shoes must be sharpest part.
 - **FIDELITY**: 100% match to product photos.
+- **MODEL SIZE**: The model person must occupy the same proportion in the output as in Image 1. Do not shrink the model.
 `;
 
     const images = [
@@ -189,6 +285,7 @@ ${additionalInstructions ? `[ADDITIONAL EDITS]\n${additionalInstructions}` : ''}
 
     try {
         console.log('=== generateCampaignImage (SECURE) ===');
+        console.log(`[AspectInfo] ${aspectInfo ? `${aspectInfo.orientation} (${aspectInfo.aspectRatio})` : 'Not provided (default to 1:1)'}`);
 
         const result = await callGeminiSecure(EDITING_PROMPT, images);
 
@@ -197,13 +294,18 @@ ${additionalInstructions ? `[ADDITIONAL EDITS]\n${additionalInstructions}` : ''}
         }
 
         console.log('✓ Campaign image generated (SECURE)');
-        return { success: true, imageBase64: result.data };
+        return {
+            success: true,
+            imageBase64: result.data,
+            aspectRatio: aspectInfo?.aspectRatio
+        };
 
     } catch (error: any) {
         console.error("Campaign Generation Error:", error);
         return { success: false, error: error.message || String(error) };
     }
 };
+
 
 // ============================================================================
 // POSE CHANGE (SECURE)

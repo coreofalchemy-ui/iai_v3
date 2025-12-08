@@ -239,9 +239,9 @@ export const upscaleFace = async (base64Image: string): Promise<string> => {
     return result.data;
 };
 /**
- * 🔐 전체 모델 재생성 (Full Model Regeneration)
- * - 배경, 자세, 옷(질감/소재/색상), 신발을 정확히 유지
- * - 새로운 모델(선택된 얼굴)로 전체를 자연스럽게 다시 렌더링
+ * 🔐 전체 모델 재생성 (Full Model Regeneration) - 2단계 방식
+ * Step 1: 선택된 얼굴로 모델 전신을 먼저 생성
+ * Step 2: 그 모델에게 홀드된 이미지의 옷/신발을 입힘
  */
 export const replaceFaceInImage = async (
     targetImageBase64: string,
@@ -250,78 +250,91 @@ export const replaceFaceInImage = async (
     const targetB64 = targetImageBase64.includes('base64,') ? targetImageBase64.split('base64,')[1] : targetImageBase64;
     const faceB64 = sourceFaceBase64.includes('base64,') ? sourceFaceBase64.split('base64,')[1] : sourceFaceBase64;
 
-    const prompt = `
-**ROLE: FASHION PHOTOGRAPHER AI ARTIST** (역할: 패션 사진작가 AI 아티스트)
+    // ============================================
+    // STEP 1: 선택된 얼굴로 기본 모델 전신 생성
+    // ============================================
+    const step1Prompt = `
+**[STEP 1: 패션 모델 전신 생성]**
 
-**TASK: FULL MODEL REGENERATION** (전체 모델 재생성)
+이 사람(제공된 이미지)의 전신 패션 모델 사진을 생성해주세요.
 
-**INPUT IMAGES:**
-* **IMAGE 1 [REFERENCE SCENE]**: Complete source of truth for:
-  - EXACT background (color, texture, lighting, environment)
-  - EXACT pose and body position (standing, sitting, walking, arm positions)
-  - EXACT outfit including all fabric textures, colors, patterns, wrinkles, folds
-  - EXACT shoes including brand details, outsole, stitching, material shine
-  - EXACT lighting setup and shadows
-  
-* **IMAGE 2 [NEW MODEL IDENTITY]**: Source for the new model's face/identity only.
+**[모델 사양]**
+- 이 사람의 얼굴을 그대로 사용
+- 같은 피부톤, 비슷한 헤어스타일
+- 키가 크고 슬림한 패션 모델 비율
+- 자연스러운 서있는 자세
 
-**CRITICAL REQUIREMENTS (핵심 요구사항):**
+**[임시 의상]**
+- 심플한 흰색 티셔츠와 청바지
+- 깔끔한 운동화
+- (이 옷은 나중에 교체될 예정)
 
-1. **BACKGROUND LOCK (배경 완벽 유지):**
-   - Copy the background pixel-perfectly from IMAGE 1
-   - Same studio backdrop, same lighting, same shadows, same atmosphere
-   
-2. **OUTFIT PRESERVATION (의상 완벽 보존):**
-   - IDENTICAL clothing from IMAGE 1
-   - Same fabric texture, same wrinkles, same colors, same fit
-   - Same accessories if any
-   
-3. **SHOES CRITICAL (신발 중요!):**
-   - EXACT same shoes as IMAGE 1
-   - Preserve all shoe details: outsole, stitching, material, shine, brand elements
-   - Position and angle must match the original pose
-   
-4. **POSE MATCHING (자세 매칭):**
-   - IDENTICAL body pose, arm position, leg position as IMAGE 1
-   - Same body proportions and positioning
-   
-5. **NEW MODEL RENDERING (새 모델 렌더링):**
-   - Generate the ENTIRE body with IMAGE 2's face identity
-   - Body proportions should be similar to IMAGE 1 (naturally fitting the same clothes)
-   - The face should be IMAGE 2's identity, rendered naturally to match the scene lighting
-   - Hair can be adapted to match IMAGE 2's style
-   
-6. **NATURAL INTEGRATION (자연스러운 통합):**
-   - The new model must look completely natural in the scene
-   - No visible editing artifacts, no face-pasting look
-   - Consistent lighting across the entire body and face
-   - Professional fashion photography quality
+**[배경]**
+- 깔끔한 회색 스튜디오 배경
 
-**OUTPUT:**
-A photorealistic fashion image with a NEW model (from IMAGE 2's identity) wearing the EXACT same outfit and shoes from IMAGE 1, in the EXACT same pose and background.
-**CRITICAL: Output must have the EXACT same dimensions and aspect ratio as IMAGE 1.**
+**[화질]**
+- 8K 해상도, 선명하고 깨끗하게
+- 프로 패션 사진 품질
 
-**IMAGE SIZE & QUALITY:**
-- Output MUST be the same aspect ratio as IMAGE 1 (match width:height ratio exactly)
-- Slightly enhance quality and sharpness compared to original
-- Professional fashion photography resolution
-
-**AVOID:**
-- Face-only pasting that looks artificial
-- Changing any aspect of clothing, shoes, or background
-- Different pose or body position
-- Loss of shoe details (outsole, stitching, material)
-- Unnatural lighting or skin tones
-- Different aspect ratio or cropping from original IMAGE 1
+**[출력]**: 전신 패션 모델 사진, 세로형 (3:4)
 `;
 
-    const result = await callGeminiSecure(prompt, [
-        { data: targetB64, mimeType: 'image/png' },
-        { data: faceB64, mimeType: 'image/png' }
-    ], { temperature: 0.4 });
+    const step1Result = await callGeminiSecure(step1Prompt, [
+        { data: faceB64, mimeType: 'image/png' }  // 얼굴 이미지만 전달
+    ], {
+        temperature: 0.6,
+        aspectRatio: '3:4'
+    });
 
-    if (result.type !== 'image') throw new Error('Model regeneration failed');
-    return result.data;
+    if (step1Result.type !== 'image') throw new Error('Step 1: Model generation failed');
+
+    const baseModelB64 = step1Result.data;
+
+    // ============================================
+    // STEP 2: 생성된 모델에게 착장 입히기
+    // ============================================
+    const step2Prompt = `
+**[STEP 2: 모델에게 옷 입히기]**
+
+두 장의 이미지가 주어집니다:
+- **IMAGE 1**: 이 모델 (방금 생성된 모델)
+- **IMAGE 2**: 이 옷을 입혀야 함 (착장 참고)
+
+**[작업]**
+IMAGE 1의 모델에게 IMAGE 2의 옷을 입혀주세요.
+
+**[유지할 것 - IMAGE 1에서]**
+- 얼굴 그대로 유지
+- 헤어스타일 유지
+- 피부톤 유지
+- 전체적인 자세는 자연스럽게 유지하거나 약간 변형 가능
+
+**[가져올 것 - IMAGE 2에서]**
+- 코트, 니트, 셔츠, 바지 등 모든 의류
+- 신발 (디테일까지 정확하게)
+- 모자, 액세서리 등
+- 같은 색상, 같은 소재감
+
+**[배경]**
+- IMAGE 2와 비슷한 배경으로 변경
+
+**[화질]**
+- 8K 해상도, 선명하게
+- 프로 패션 사진 품질
+
+**[출력]**: IMAGE 1의 모델이 IMAGE 2의 옷을 입고 있는 전신 사진
+`;
+
+    const step2Result = await callGeminiSecure(step2Prompt, [
+        { data: baseModelB64, mimeType: 'image/png' },  // IMAGE 1: Step 1에서 생성된 모델
+        { data: targetB64, mimeType: 'image/png' }      // IMAGE 2: 착장 참고 이미지
+    ], {
+        temperature: 0.5,
+        aspectRatio: '3:4'
+    });
+
+    if (step2Result.type !== 'image') throw new Error('Step 2: Outfit application failed');
+    return step2Result.data;
 };
 
 /**
@@ -346,12 +359,148 @@ export const batchFaceReplacement = async (
             const result = await replaceFaceInImage(targetBase64, sourceFaceBase64);
             results.push({ original: targetUrl, result });
         } catch (e: any) {
-            console.error(`❌ Failed to replace face in image ${i + 1}:`, e);
+            console.error(`❌ Failed to replace face in image ${i + 1}: `, e);
             results.push({ original: targetUrl, result: null, error: e.message });
         }
     }
 
     return results;
+};
+
+/**
+ * 🔐 모델 재생성: 선택된 얼굴로 새 모델 생성 (원본 사이즈/비율 유지)
+ */
+export const generateBaseModelFromFace = async (
+    sourceFaceBase64: string,
+    referenceImageBase64: string,
+    gender: 'm' | 'w'
+): Promise<string> => {
+    const faceB64 = sourceFaceBase64.includes('base64,')
+        ? sourceFaceBase64.split('base64,')[1]
+        : sourceFaceBase64;
+    const refB64 = referenceImageBase64.includes('base64,')
+        ? referenceImageBase64.split('base64,')[1]
+        : referenceImageBase64;
+
+    const prompt = `
+**[작업: 원본 사진에서 얼굴만 교체]**
+
+두 이미지가 주어집니다:
+- **[얼굴 사진]**: 새로 적용할 얼굴
+- **[원본 사진]**: 기준이 되는 사진 (이 사진을 그대로 복제)
+
+---
+
+**[핵심 명령]**
+
+[원본 사진]을 **그대로 복제**하되, 얼굴만 [얼굴 사진]의 사람으로 바꿔라.
+
+---
+
+**[절대적으로 유지해야 할 것 - 원본 사진 기준]**
+
+1. **출력 크기**: 원본 사진과 **동일한 해상도와 크기**로 출력
+2. **피사체 크기**: 원본 사진에서 사람이 차지하는 비율 그대로 유지
+3. **구도**: 원본 사진의 카메라 앵글, 프레임 그대로
+4. **배경**: 원본 사진의 배경 그대로 (변경 금지)
+5. **착장**: 원본 사진의 옷, 신발, 액세서리 그대로
+6. **자세**: 원본 사진의 포즈 그대로
+
+---
+
+**[변경할 것]**
+
+- **얼굴**: [얼굴 사진]의 얼굴로 교체 (눈, 코, 입, 턱선, 광대뼈)
+- **헤어스타일**: [얼굴 사진]의 헤어스타일로 교체
+- **피부톤**: [얼굴 사진]의 피부톤으로 맞춤
+
+---
+
+**[출력 품질]**
+
+- **해상도**: 원본 사진과 동일하거나 더 높게
+- **선명도**: Ultra sharp, 8K quality
+- **화질 저하 금지**: 블러, 노이즈, 화질 저하 없이 선명하게
+
+---
+
+**[실패 조건]**
+
+- 출력 이미지가 원본 사진보다 작으면 실패
+- 피사체가 원본 사진보다 작아지면 실패
+- 배경이 바뀌면 실패
+- 얼굴이 [얼굴 사진]과 다르면 실패
+- 화질이 저하되면 실패
+
+**[출력]**: 원본 사진과 동일한 크기, 동일한 구도의 고화질 패션 사진
+`;
+
+    // aspectRatio를 지정하지 않아서 원본 이미지 크기를 따라가게 함
+    const result = await callGeminiSecure(prompt, [
+        { data: faceB64, mimeType: 'image/png' },   // IMAGE 1: 새 얼굴
+        { data: refB64, mimeType: 'image/png' }     // IMAGE 2: 원본 (크기/구도/배경 기준)
+    ], {
+        temperature: 0.3,  // 더 일관성 있게
+        // aspectRatio 제거 - 원본 이미지 비율 유지
+    });
+
+    if (result.type !== 'image') throw new Error('Model generation failed');
+    return result.data;
+};
+
+/**
+ * 🔐 2단계: 베이스 모델에 옷/신발 입히기
+ */
+export const applyOutfitToBaseModel = async (
+    baseModelBase64: string,      // 1단계 결과 (새로 그린 모델)
+    outfitRefBase64: string       // 홀드된 이미지 (옷/신발 참고용)
+): Promise<string> => {
+    const baseB64 = baseModelBase64.includes('base64,')
+        ? baseModelBase64.split('base64,')[1]
+        : baseModelBase64;
+    const outfitB64 = outfitRefBase64.includes('base64,')
+        ? outfitRefBase64.split('base64,')[1]
+        : outfitRefBase64;
+
+    const prompt = `
+[ROLE]
+패션 사진 합성 아티스트.
+
+[IMAGE 1: BASE MODEL]
+- 여기 있는 사람의 "얼굴, 헤어스타일, 몸 비율, 포즈"는 그대로 유지한다.
+- 얼굴이 바뀌면 실패다.
+- 몸의 포즈, 다리 각도, 팔 위치도 웬만하면 유지해라.
+
+[IMAGE 2: OUTFIT REFERENCE]
+- 여기 있는 "옷과 신발"만 복사한다.
+- 얼굴, 머리, 체형, 배경은 무시한다.
+
+[TASK]
+- IMAGE 1에 있는 사람에게
+  IMAGE 2에 있는 옷과 신발을 최대한 비슷하게 입혀라.
+- 핏, 비율, 기장, 소재, 색감은 IMAGE 2를 참고한다.
+- 하지만 몸과 얼굴은 반드시 IMAGE 1 사람이어야 한다.
+
+[HARD RULES]
+- 얼굴은 무조건 IMAGE 1.
+- IMAGE 2 얼굴을 쓰면 실패.
+- 신발은 IMAGE 2와 최대한 같게.
+- 배경은 IMAGE 1 스타일을 유지해도 되고,
+  전체 톤이 어색하지 않게만 맞춰라.
+
+[QUALITY]
+- Ultra sharp, high resolution.
+- 다리/신발이 흐리거나 잘리면 실패.
+- 신발, 바지 끝, 바닥 그림자가 자연스럽게 연결되게.
+`;
+
+    const result = await callGeminiSecure(prompt, [
+        { data: baseB64, mimeType: 'image/png' },   // IMAGE 1: 베이스
+        { data: outfitB64, mimeType: 'image/png' }, // IMAGE 2: 옷 레퍼런스
+    ], { aspectRatio: '9:16', temperature: 0.5 });
+
+    if (result.type !== 'image') throw new Error('Outfit application failed');
+    return result.data;
 };
 
 // urlToBase64 재수출
