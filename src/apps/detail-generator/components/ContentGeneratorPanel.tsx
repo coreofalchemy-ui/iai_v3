@@ -10,6 +10,8 @@ const colors = { bgBase: '#F5F5F7', bgSurface: '#FFFFFF', bgSubtle: '#F0F0F4', b
 
 interface ContentGeneratorPanelProps {
     productImages?: string[];
+    productImageCount?: number;     // 사용자 업로드 이미지 수
+    aiGeneratedCount?: number;      // AI 생성 이미지 수
     onImageGenerated?: (imageUrl: string) => void;
     onAddToPreview?: (imageUrl: string, sectionType: string) => void;
     lang?: 'ko' | 'en';
@@ -22,6 +24,8 @@ interface ContentGeneratorPanelProps {
 
 export default function ContentGeneratorPanel({
     productImages = [],
+    productImageCount,
+    aiGeneratedCount,
     onImageGenerated,
     onAddToPreview,
     savedResults = [],
@@ -145,7 +149,10 @@ export default function ContentGeneratorPanel({
 
                 newGeneratedUrls.push(imageUrl);
                 onImageGenerated?.(imageUrl);
-                onAddToPreview?.(imageUrl, 'campaign');
+
+                // 🔒 No longer auto-add to preview
+                // User will click ADD button on each result to add to preview
+                console.log(`[ContentGeneratorPanel] Image ${i + 1} generated, saved to results`);
             }
 
             // Append new results to existing ones
@@ -200,7 +207,17 @@ export default function ContentGeneratorPanel({
 
             {/* Product Images Status */}
             <div style={{ background: colors.bgSurface, borderRadius: 12, padding: 12, border: `1px solid ${colors.borderSoft}` }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }} className="mb-2 block">{lang === 'ko' ? '제품 이미지' : 'Product Images'}</span>
+                <div className="flex justify-between items-center mb-2">
+                    <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary }}>{lang === 'ko' ? '제품 이미지' : 'Product Images'}</span>
+                    {productImages.length > 0 && (
+                        <span style={{ fontSize: 10, color: colors.textMuted }}>
+                            {productImageCount !== undefined && aiGeneratedCount !== undefined
+                                ? `${lang === 'ko' ? '업로드' : 'Upload'} ${productImageCount} + ${lang === 'ko' ? 'AI' : 'AI'} ${aiGeneratedCount}`
+                                : productImages.length
+                            }
+                        </span>
+                    )}
+                </div>
                 {productImages.length > 0 ? (
                     <div className="flex gap-1.5 flex-wrap">
                         {productImages.slice(0, 4).map((url, i) => <img key={i} src={url} alt={`Product ${i + 1}`} className="w-10 h-10 object-cover rounded-lg" />)}
@@ -250,7 +267,7 @@ export default function ContentGeneratorPanel({
                             {lang === 'ko' ? '모두 지우기' : 'Clear All'}
                         </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
+                    <div className="grid grid-cols-2 gap-2 max-h-[600px] overflow-y-auto">
                         {activeResults.map((url, i) => (
                             <div key={i} className="relative group">
                                 <img src={url} alt={`Result ${i + 1}`} className="w-full rounded-lg border border-gray-100" />

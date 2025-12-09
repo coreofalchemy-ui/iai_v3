@@ -5,9 +5,9 @@
 
 import { callGeminiSecure } from '../../../lib/geminiClient';
 
-// Target dimensions for Fashion Detail Pages (1:1 Square) - 기본값
-const TARGET_WIDTH = 1400;
-const TARGET_HEIGHT = 1400;
+// Target dimensions for Fashion Detail Pages (750x900 Fixed)
+const TARGET_WIDTH = 750;
+const TARGET_HEIGHT = 900;
 
 // 최대 해상도 (긴 쪽 기준)
 const MAX_DIMENSION = 1400;

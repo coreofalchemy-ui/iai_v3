@@ -29,13 +29,27 @@ export default function QuickTransferModal({ visible, onClose, onGenerate }: Qui
     const handleModelSelect = (files: FileList | null) => {
         if (!files) return;
         const remaining = MAX_MODELS - models.length;
-        setModels(prev => [...prev, ...Array.from(files).slice(0, remaining).map(file => ({ file, preview: URL.createObjectURL(file) }))]);
+        const newFiles = Array.from(files).slice(0, remaining);
+
+        // 🔒 중복 제거: name+size 조합으로 체크
+        setModels(prev => {
+            const existingKeys = new Set(prev.map(m => `${m.file.name}_${m.file.size}`));
+            const uniqueNew = newFiles.filter(f => !existingKeys.has(`${f.name}_${f.size}`));
+            return [...prev, ...uniqueNew.map(file => ({ file, preview: URL.createObjectURL(file) }))];
+        });
     };
 
     const handleShoeSelect = (files: FileList | null) => {
         if (!files) return;
         const remaining = MAX_SHOES - shoes.length;
-        setShoes(prev => [...prev, ...Array.from(files).slice(0, remaining).map(file => ({ file, preview: URL.createObjectURL(file) }))]);
+        const newFiles = Array.from(files).slice(0, remaining);
+
+        // 🔒 중복 제거: name+size 조합으로 체크
+        setShoes(prev => {
+            const existingKeys = new Set(prev.map(s => `${s.file.name}_${s.file.size}`));
+            const uniqueNew = newFiles.filter(f => !existingKeys.has(`${f.name}_${f.size}`));
+            return [...prev, ...uniqueNew.map(file => ({ file, preview: URL.createObjectURL(file) }))];
+        });
     };
 
     const removeModel = (i: number) => { setModels(prev => { const n = [...prev]; URL.revokeObjectURL(n[i].preview); n.splice(i, 1); return n; }); };

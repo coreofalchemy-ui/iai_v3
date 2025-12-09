@@ -183,27 +183,72 @@ export async function synthesizeShoeStudio(
             scenePrompt = `**SCENE:** Modern studio with soft lighting.`;
     }
 
-    const prompt = `// === SHOE SWAP TASK ===
-// OUTPUT SIZE: ${aspectInfo.width}x${aspectInfo.height} pixels (EXACT)
+    const prompt = `// === 🔒 PHOTO EDIT MODE - SEAMLESS SHOE SWAP ===
+// ⚠️ THIS IS PHOTO EDITING, NOT IMAGE GENERATION ⚠️
+// The goal is to make shoes look like they were ORIGINALLY in the photo.
 
-**TASK**: Generate a NEW image at EXACTLY ${aspectInfo.width}x${aspectInfo.height} pixels.
+**🎯 MISSION: Replace shoes so naturally that no one can tell they were edited**
 
-**WHAT TO DO**:
-1. Create a model wearing the SHOE from Image 1
-2. The model should match the POSE and OUTFIT from Image 2
-3. Generate a CLEAN STUDIO BACKGROUND (NOT copying Image 2's background)
-4. Output MUST be ${aspectInfo.width}x${aspectInfo.height} pixels
+[STEP 1: ANALYZE ORIGINAL PHOTO (Image 2)]
+Before doing ANYTHING, study Image 2 carefully:
+- What is the COLOR TEMPERATURE? (warm/golden? cool/blue? neutral?)
+- What is the SHARPNESS level? (sharp? soft? slightly blurry?)
+- Is there FILM GRAIN or noise?
+- What is the CONTRAST level? (high? low? medium?)
+- What is the SATURATION level? (vibrant? muted? desaturated?)
+- What is the overall BRIGHTNESS? (bright? dark? moody?)
 
-**SHOE (Image 1)**: Copy this shoe EXACTLY - same color, texture, shape
+[STEP 2: PRESERVATION RULES - DO NOT CHANGE]
+- Background: KEEP 100% identical
+- Model/person: KEEP 100% identical
+- Clothing: KEEP 100% identical
+- Lighting direction: KEEP identical
+- Overall mood: KEEP identical
+- Image quality: KEEP identical (if blurry, stay blurry)
 
-**MODEL REFERENCE (Image 2)**: Copy the model's:
-- Body pose and proportions
-- Outfit/clothing (everything except shoes)
-- Face and hair
+[STEP 3: SHOE COLOR GRADING - CRITICAL]
+The new shoes from Image 1 must be TRANSFORMED to match Image 2's look:
 
-**BACKGROUND**: Generate a new clean studio background. Do NOT copy the background from Image 2.
+🌡️ **COLOR TEMPERATURE:**
+- If Image 2 is WARM/GOLDEN → Add warm undertones to shoes (not pure black)
+- If Image 2 is COOL/BLUE → Add cool undertones to shoes
+- Black shoes in warm photos should have BROWN/TAN tint, not pure black
 
-**CRITICAL OUTPUT SIZE**: The final image MUST be ${aspectInfo.promptRatio} format, sized to ${aspectInfo.width}x${aspectInfo.height} pixels.`;
+📸 **SHARPNESS MATCHING:**
+- If Image 2 is SOFT → Make shoes equally SOFT, reduce edge sharpness
+- If Image 2 is SHARP → Keep shoes sharp
+- Match the EXACT blur level of the surrounding pixels
+
+🎞️ **FILM LOOK:**
+- If Image 2 has grain → Add SAME grain to shoes
+- If Image 2 has vintage processing → Apply SAME to shoes
+- Match the EXACT noise pattern
+
+🎨 **SATURATION & CONTRAST:**
+- If Image 2 is LOW SATURATION → Desaturate the shoes to match
+- If Image 2 has LIFTED BLACKS → Don't make shoes pure black
+- Match the EXACT contrast curve
+
+💡 **BRIGHTNESS:**
+- Shoes should NOT be brighter/cleaner than their surroundings
+- If the image is moody/dark, shoes must be moody/dark too
+- No "spotlight" effect on shoes
+
+[🚫 ABSOLUTE FAILURES - AVOID AT ALL COSTS]
+- ❌ Shoes that look SHARPER than the rest of the image
+- ❌ Shoes that are MORE SATURATED than surroundings
+- ❌ Pure BLACK shoes in a WARM-toned photo
+- ❌ Shoes that look "pasted on" or CGI
+- ❌ Shoes that "pop out" from the image
+- ❌ Any visible editing seams
+
+[OUTPUT]
+- Resolution: ${aspectInfo.width}x${aspectInfo.height} pixels
+- Content: Image 2 with shoes seamlessly replaced
+- Quality: MUST BE IDENTICAL to Image 2
+
+Image 1: SOURCE for shoe design (use as reference for shape/style)
+Image 2: MASTER photo - preserve everything, match all settings to this`;
 
     const result = await callGeminiSecure(
         prompt,

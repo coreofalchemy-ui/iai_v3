@@ -198,25 +198,51 @@ export async function regenerateShoesOnly(
     const baseB64 = await urlToBase64(baseImageUrl);
     const shoeB64 = await urlToBase64(shoeImageUrl);
 
-    const prompt = `// --- PROTOCOL: AGGRESSIVE_SHOE_REPLACEMENT ---
-// TASK: COMPLETELY ERASE old shoes and paint PRODUCT_IMAGES on the feet.
+    const prompt = `// === 🔒 NATURAL SHOE REPLACEMENT PROTOCOL ===
+// TASK: Seamlessly replace shoes while keeping them naturally worn on feet.
 // RESOLUTION_MODE: ${options?.resolution || '1K'}
 // OUTPUT FORMAT: Portrait (3:4).
-//
-// [CRITICAL FRAMING RULES]
-// 1. **NO CROPPING**: Maintain EXACT SAME framing/zoom as BASE_IMAGE.
-// 2. **FULL BODY**: If BASE_IMAGE is full body, output MUST be full body.
-// 3. **HEAD PRESERVATION**: Model's head and hair must be visible.
-//
-// [INSTRUCTIONS]
-// 1. **TARGET**: Identify the feet/shoes area in BASE_IMAGE.
-// 2. **ACTION**: REPLACE the shoes with exact design from PRODUCT_IMAGES.
-// 3. **INTEGRATION**: Shoes must realistically touch the ground. ADD SHADOWS to contact points.
-// 4. **BLENDING**: MATCH lighting and color tone of the shoes to the model's environment.
-// 5. **QUALITY**: Masterpiece, 8k resolution, highly detailed texture, photorealistic. NO "CUTOUT" LOOK.
 
-BASE_IMAGE: [First image]
-PRODUCT_IMAGES: [Second image]`;
+**🎯 GOAL: Make the new shoes look NATURALLY WORN on the model's feet**
+
+[CRITICAL FRAMING RULES]
+1. **NO CROPPING**: Maintain EXACT SAME framing/zoom as BASE_IMAGE.
+2. **FULL BODY**: If BASE_IMAGE is full body, output MUST be full body.
+3. **HEAD PRESERVATION**: Model's head and hair must be visible.
+
+[🎨 COLOR GRADING - MATCH TO MODEL PHOTO - CRITICAL]
+1. **ANALYZE BASE_IMAGE TONE**: Study the color temperature (warm/cool), saturation, brightness
+2. **APPLY SAME GRADING TO SHOES**: Shoes must have IDENTICAL color grading as the rest of the image
+3. **WARM PHOTO = WARM SHOES**: If BASE_IMAGE is warm/golden, shoes must have warm undertones
+4. **COOL PHOTO = COOL SHOES**: If BASE_IMAGE is cool/blue, shoes must have cool undertones
+5. **MATCH CONTRAST**: Shoes contrast level must match the overall image contrast
+6. **SAME FILM LOOK**: If BASE_IMAGE has vintage/film look, apply same look to shoes
+7. **NO PURE BLACK**: Even black shoes should have the same color cast as the image
+
+[NATURAL SHOE INTEGRATION - CRITICAL]
+1. **PERSPECTIVE MATCH**: Adjust shoe angle/perspective to MATCH the foot position in BASE_IMAGE.
+2. **FOOT CONTACT**: Shoes must appear NATURALLY worn on feet, not floating or pasted.
+3. **SHADOW INTEGRATION**: Add natural shadows under shoes matching lighting direction.
+4. **REALISTIC BENDING**: If the foot is in motion/angled, bend the shoe naturally.
+5. **GROUND CONTACT**: Heel and toe must touch the ground plane realistically.
+6. **LACE/CLOSURE FIT**: Laces/closures must look naturally tightened on the foot.
+
+[QUALITY REQUIREMENTS]
+- Lighting MUST match the scene's ambient light and direction
+- Color tone of shoes must integrate with overall image warmth/coolness
+- NO visible editing seams or unnatural edges
+- Photorealistic 8k quality, masterpiece level rendering
+
+[🚫 AVOID]
+- Shoes looking "pasted on" or floating
+- Awkward angles that don't match foot position
+- Missing or unnatural shadows
+- Shoes having DIFFERENT color grading than rest of image
+- Shoes looking too saturated or desaturated compared to the photo
+- Visible compositing artifacts
+
+BASE_IMAGE: [First image - ANALYZE color grading and APPLY to shoes]
+PRODUCT_IMAGES: [Second image - copy shoe design, adapt color tone to BASE_IMAGE]`;
 
     // Map resolution to config if needed, or pass as metadata
     // For now we pass it in prompt or logic, but if server supports it:
@@ -224,9 +250,10 @@ PRODUCT_IMAGES: [Second image]`;
     const dimensions = await extractImageDimensions(baseB64);
     const aspectRatio = `${dimensions.width}:${dimensions.height}`;
 
+    // Force strict output size: 750x900
     const config = {
-        imageSize: options?.resolution === '4K' ? '4K' : '1K',
-        aspectRatio
+        imageSize: '1K',
+        aspectRatio: '750:900'
     };
 
     const result = await callGeminiSecure(
@@ -265,45 +292,66 @@ export async function bringModelToStudio(
         ? `// --- PROTOCOL: CUSTOM_BACKGROUND_COMPOSITE ---
 // TARGET: Place model in the provided CUSTOM BACKGROUND with new shoes.
 // RESOLUTION_MODE: ${options?.resolution || '1K'}
-// OUTPUT FORMAT: Portrait (3:4).
+// 🔒 CRITICAL OUTPUT SIZE: MUST BE EXACTLY 750x900 PIXELS (Portrait)
 //
 // [BACKGROUND ANALYSIS]
 // 1. **ANALYZE IMAGE 3**: Study the lighting, atmosphere, perspective, and environment.
 // 2. **LIGHTING MATCHING**: Match model's lighting to the background's light source direction and color temperature.
 // 3. **PERSPECTIVE MATCHING**: Place model at natural scale and position within the scene.
 // 4. **SHADOW INTEGRATION**: Add realistic shadows that match the background's lighting.
+// 5. **SIZE OVERRIDE**: Regardless of background image size, OUTPUT MUST BE 750x900 pixels.
 //
 // [CRITICAL PIXEL RULES]
-// 1. **FACE PRESERVATION**: Face MUST be pixel-perfect identical to original model.
-// 2. **BODY PRESERVATION**: Keep EXACT body proportions and skin texture.
-// 3. **SHOE REPLACEMENT**: Wear the provided PRODUCT_IMAGES (Image 2).
-// 4. **NATURAL INTEGRATION**: Model must look like they were photographed in this environment.
-// 5. **FRAMING**: FULL BODY SHOT. DO NOT CROP THE HEAD.
+// 1. **OUTPUT DIMENSIONS**: Final image MUST be 750 pixels wide × 900 pixels tall.
+// 2. **FACE PRESERVATION**: Face MUST be pixel-perfect identical to original model.
+// 3. **BODY PRESERVATION**: Keep EXACT body proportions and skin texture.
+// 4. **SHOE REPLACEMENT**: Wear the provided PRODUCT_IMAGES (Image 2).
+// 5. **NATURAL INTEGRATION**: Model must look like they were photographed in this environment.
+// 6. **FRAMING**: FULL BODY SHOT. DO NOT CROP THE HEAD.
 //
 // [AVOID]
 // - Unnatural lighting on model that doesn't match background
 // - Model looking pasted or floating
 // - Different perspective/scale that looks wrong
 // - Visible edges or compositing artifacts
+// - Wrong output dimensions (must be 750x900)
 
 ORIGINAL_MODEL_IMAGE: [First image]
 PRODUCT_IMAGES: [Second image]
-CUSTOM_BACKGROUND: [Third image]`
-        : `// --- PROTOCOL: STUDIO_MASTER_GENERATION ---
-// TARGET: Place model in a "Modern Concrete Studio" with new shoes.
+CUSTOM_BACKGROUND: [Third image - use for atmosphere only, output size is 750x900]`
+        : `// === PROTOCOL: STUDIO_MASTER_GENERATION ===
+// TARGET: Place model in a "Vintage Concrete Studio with Natural Sunlight" wearing new shoes.
 // RESOLUTION_MODE: ${options?.resolution || '1K'}
-// OUTPUT FORMAT: Portrait (3:4).
-//
-// [CRITICAL PIXEL RULES]
-// 1. **FACE PRESERVATION**: Face MUST be pixel-perfect identical.
-// 2. **BODY PRESERVATION**: Keep EXACT body proportions and skin texture.
-// 3. **SHOE REPLACEMENT**: Wear the provided PRODUCT_IMAGES.
-// 4. **BACKGROUND**: Neutral grey concrete studio wall and floor.
-// 5. **FRAMING**: FULL BODY SHOT. DO NOT CROP THE HEAD.
-// 6. **QUALITY**: Commercial photography, 8k resolution, sharp focus, high fidelity.
+// 🔒 OUTPUT FORMAT: 750x900 pixels (Portrait).
 
-ORIGINAL_MODEL_IMAGE: [First image]
-PRODUCT_IMAGES: [Second image]`;
+// [🌅 BACKGROUND SPECIFICATION - VINTAGE CONCRETE WITH SUNLIGHT]
+// **WALL**: Weathered grey concrete wall with subtle texture, natural aging marks, and raw industrial aesthetic.
+// **FLOOR**: Smooth concrete floor matching the wall tone, slightly weathered.
+// **LIGHTING**: DIAGONAL NATURAL SUNLIGHT BEAMS coming from upper right window (like morning sun).
+// **SHADOWS**: Dramatic diagonal shadow lines on the wall/floor from window frames.
+// **ATMOSPHERE**: Minimalist industrial studio with warm natural light creating a vintage film look.
+// **COLOR TONE**: Slightly warm undertones from sunlight, muted grey concrete colors.
+
+// [👟 NATURAL SHOE WEARING - CRITICAL]
+// The model must be ACTUALLY WEARING the shoes, NOT a composite.
+// 1. **FEET IN SHOES**: The model's feet must be INSIDE the shoes naturally.
+// 2. **NATURAL FIT**: Shoes must conform to foot shape (not hovering or pasted).
+// 3. **LACES TIED**: If shoes have laces, they must appear naturally tied on the feet.
+// 4. **WEIGHT BEARING**: Shoes must show natural compression/crease from bearing the model's weight.
+// 5. **GROUND CONTACT**: Soles must be flat on the floor with realistic shadow underneath.
+// 6. **NO FLOATING**: Shoes must NOT appear separate from the model's feet.
+
+// [CRITICAL PIXEL RULES]
+// 1. **OUTPUT DIMENSIONS**: Final image MUST be 750 pixels wide × 900 pixels tall.
+// 2. **FACE PRESERVATION**: Face MUST be pixel-perfect identical.
+// 3. **BODY PRESERVATION**: Keep EXACT body proportions and skin texture.
+// 4. **SHOE WEARING**: Model naturally WEARING the PRODUCT_IMAGES shoes.
+// 5. **BACKGROUND**: Vintage concrete studio with diagonal sunlight EXACTLY as described.
+// 6. **FRAMING**: FULL BODY SHOT. DO NOT CROP THE HEAD.
+// 7. **QUALITY**: Commercial photography, 8k resolution, sharp focus, high fidelity.
+
+ORIGINAL_MODEL_IMAGE: [First image - keep face/body, model must WEAR new shoes]
+PRODUCT_IMAGES: [Second image - shoes to WEAR, not composite]`;
 
     // Force strict output size: 750x900
     const config = {
@@ -326,7 +374,59 @@ PRODUCT_IMAGES: [Second image]`;
     const result = await callGeminiSecure(prompt, images, config);
 
     if (result.type !== 'image') throw new Error('Studio generation failed');
-    return result.data;
+
+    // 🔒 HARD LOCK: Force resize to exactly 750x900 regardless of AI output
+    const forcedResult = await forceResizeTo750x900(result.data);
+    console.log('[bringModelToStudio] 🔒 HARD LOCKED to 750x900');
+    return forcedResult;
+}
+
+/**
+ * 🔒 강제로 이미지를 750x900 크기로 리사이즈
+ */
+async function forceResizeTo750x900(imageDataUrl: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const TARGET_WIDTH = 750;
+            const TARGET_HEIGHT = 900;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = TARGET_WIDTH;
+            canvas.height = TARGET_HEIGHT;
+            const ctx = canvas.getContext('2d');
+
+            if (!ctx) {
+                reject(new Error('Could not get canvas context'));
+                return;
+            }
+
+            // 중앙 기준 크롭 후 리사이즈
+            const srcWidth = img.width;
+            const srcHeight = img.height;
+            const srcRatio = srcWidth / srcHeight;
+            const targetRatio = TARGET_WIDTH / TARGET_HEIGHT;
+
+            let cropX = 0, cropY = 0, cropW = srcWidth, cropH = srcHeight;
+
+            if (srcRatio > targetRatio) {
+                // 소스가 더 넓음 → 좌우 크롭
+                cropW = Math.round(srcHeight * targetRatio);
+                cropX = Math.round((srcWidth - cropW) / 2);
+            } else if (srcRatio < targetRatio) {
+                // 소스가 더 좁음 → 상하 크롭
+                cropH = Math.round(srcWidth / targetRatio);
+                cropY = Math.round((srcHeight - cropH) / 2);
+            }
+
+            console.log(`[forceResizeTo750x900] Source: ${srcWidth}x${srcHeight} → Target: ${TARGET_WIDTH}x${TARGET_HEIGHT}`);
+
+            ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+            resolve(canvas.toDataURL('image/jpeg', 0.95));
+        };
+        img.onerror = () => reject(new Error('Failed to load image for resizing'));
+        img.src = imageDataUrl;
+    });
 }
 
 /**
@@ -336,30 +436,52 @@ export async function generateVerticalLegsCrop(baseImageUrl: string): Promise<st
     const baseB64 = await urlToBase64(baseImageUrl);
 
     const prompt = `
-    **ROLE**: Professional Fashion Photographer (Hypebeast/Streetwear Specialist)
-    **TASK**: Regenerate this photo as a **WAIST-DOWN CLOSE-UP**.
-    **CRITICAL CONSTRAINT**: The input image is a reference. Create a new image focusing ONLY on the lower body.
+// === 🔒 CLOSEUP CROP PROTOCOL - WAIST DOWN ONLY ===
+// This is a CROP task, NOT a full body regeneration.
+// OUTPUT: Show ONLY the lower body (waist to feet).
 
-    ⚠️ **ABSOLUTE FRAMING RULES** ⚠️:
-    1. **TOP BORDER**: MUST cut off at the **WAIST** or **BELT LINE**. Nothing above waist visible.
-    2. **FOCUS**: High-detail focus on the **SHOES** and **LEGS** (Pants/Skirt).
-    3. **EXCLUSION**: ❌ NO HEAD. ❌ NO CHEST. ❌ NO SHOULDERS. ❌ NO FACE. ❌ NO ARMS.
-    4. **COMPOSITION**: "Shoe Detail Shot" - shoes fully visible and centered at the bottom.
-    5. **FRAME CHECK**: If ANY part above waist is visible = FAILURE.
+**🎯 MISSION**: Create a CROPPED version showing ONLY waist-down.
 
-    **IMAGE QUALITY (원본 화질 유지)**:
-    - **MATCH SOURCE QUALITY**: Output quality MUST match the input image EXACTLY.
-    - **ULTRA SHARP**: Crystal clear, razor-sharp focus. NO blur, NO haze, NO softness.
-    - **8K RESOLUTION**: Professional high-definition, ultra-detailed output.
-    - **PRESERVE TEXTURE**: Maintain all fabric textures, material details exactly.
-    - **CLEAN EDGES**: All edges must be crisp and well-defined.
+[❌ CRITICAL BAN - FULL BODY]
+- ❌ NEVER show the head
+- ❌ NEVER show the face
+- ❌ NEVER show the chest
+- ❌ NEVER show the shoulders
+- ❌ NEVER show the arms
+- ❌ If you show ANYTHING above the waist/belt = FAILURE
+- ❌ Full body output = COMPLETE FAILURE
 
-    **STYLE PRESERVATION**:
-    - Perfectly replicate the original outfit (lower body), shoes, and background texture.
-    - Maintain the original lighting mood, shadows, and highlights EXACTLY.
-    - Same color grading and tone as the original.
+[✅ WHAT TO SHOW - ONLY THESE]
+- ✅ Waist/belt line (this is the TOP EDGE of the image)
+- ✅ Hips
+- ✅ Legs (pants/skirt visible)
+- ✅ Feet with shoes (this is the MAIN FOCUS)
+- ✅ Ground that the shoes are standing on
 
-    **OUTPUT**: Ultra-high-resolution, vertical image of the lower body only. Razor-sharp quality.
+[📷 FRAMING SPECIFICATION]
+- **TOP OF IMAGE**: Waist/belt line (cut off anything above)
+- **CENTER OF IMAGE**: Legs and pants
+- **BOTTOM OF IMAGE**: Shoes on ground (main focus area)
+- **CROP RATIO**: Same as input image aspect ratio
+
+[👟 SHOE FOCUS]
+- Shoes must be FULLY VISIBLE and SHARP
+- Shoes are the HERO of this image
+- Center composition on the footwear
+
+[🎨 PRESERVE FROM ORIGINAL]
+- Same outfit (lower body only)
+- Same shoes EXACTLY
+- Same background/environment
+- Same lighting and color grading
+- Same pants/skirt style and color
+
+[🚫 FORBIDDEN POSES]
+- ❌ NO spread legs (쩍벌 금지)
+- ✅ Elegant, natural stance
+- ✅ Feet close together or one slightly forward
+
+**OUTPUT**: CROPPED image showing WAIST-DOWN ONLY. No head, no face, no chest.
     `;
 
     // Extract dimensions from base model to preserve aspect ratio
@@ -439,12 +561,24 @@ export async function regenerateCloseupWithVariation(
 // RESOLUTION_MODE: ${options?.resolution || '4K'}
 // OUTPUT: Portrait (3:4).
 //
+// 🎬 [COMMON STYLE - 패션모델 화보 촬영]
+// This is a **professional fashion model photoshoot**. 
+// The model takes **natural, elegant, and atmospheric poses**.
+// All poses should look effortless and sophisticated like high-end fashion editorials.
+//
 // ⚠️ [ABSOLUTE FRAMING RULES - 절대 규칙] ⚠️
 // 1. **WAIST-DOWN ONLY**: Frame MUST start from WAIST/BELT LINE and go down to FEET.
 // 2. **NO UPPER BODY**: ABSOLUTELY NO HEAD, NO FACE, NO CHEST, NO SHOULDERS visible.
 // 3. **MANDATORY CROP**: The TOP of the image MUST be at the WAIST LEVEL.
 // 4. **SHOE FOCUS**: Shoes MUST be fully visible and be the main focus.
 // 5. **FRAME CHECK**: If any part ABOVE the waist is visible = FAILURE.
+//
+// 🚫 [FORBIDDEN POSES - 금지 자세] 🚫
+// - ❌ NO SPREAD LEGS (쩍벌 자세 금지) - legs must NOT be wide apart
+// - ❌ NO awkward or unnatural stances
+// - ❌ NO stiff or robotic poses
+// - ✅ ONLY elegant, natural, fashion-editorial leg positions
+// - ✅ Feet should be close together or one slightly in front of the other
 //
 // [IMAGE QUALITY - 원본 화질 유지]
 // - **MATCH SOURCE QUALITY**: Output quality MUST match the input image quality EXACTLY.
@@ -463,12 +597,14 @@ export async function regenerateCloseupWithVariation(
 // - Show: Waist → Hips → Thighs → Knees → Shins → Ankles → Shoes
 // - The shoes should be at the bottom of the frame, fully visible.
 // - Natural, fashion editorial style leg positioning.
+// - Legs should be elegantly positioned, NOT spread wide apart.
 //
 // [FORBIDDEN - 금지]
 // - ❌ NO upper body (chest, shoulders, arms, hands)
 // - ❌ NO face or head under any circumstances
 // - ❌ NO blurry or soft focus output
 // - ❌ NO quality degradation from source
+// - ❌ NO spread-leg or wide-stance poses
 
 REFERENCE_IMAGE: [Use this as quality reference - match its sharpness and detail level]`;
 

@@ -52,6 +52,7 @@ interface AdjustmentPanelProps {
     sectionHeights?: { [key: string]: number };
     onUpdateHeights?: (key: string, height: number) => void;
     onSetActiveSection?: (section: string) => void;
+    onUpdateContentSourceImages?: (newImages: string[]) => void;
 }
 
 type Section = 'hero' | 'products' | 'models' | 'contents' | 'closeup';
@@ -163,7 +164,7 @@ const SliderStyles = () => (
     `}</style>
 );
 
-export default function AdjustmentPanel({ data, onUpdate, activeSection: previewActiveSection, textElements = [], onAddTextElement, onUpdateTextElement, onDeleteTextElement, onAddSectionWithImage, lineElements = [], onAddLineElement, onDeleteLineElement, onAddGridSection, heldSections, activeFilter, onFilterChange }: AdjustmentPanelProps) {
+export default function AdjustmentPanel({ data, onUpdate, activeSection: previewActiveSection, textElements = [], onAddTextElement, onUpdateTextElement, onDeleteTextElement, onAddSectionWithImage, lineElements = [], onAddLineElement, onDeleteLineElement, onAddGridSection, heldSections, activeFilter, onFilterChange, onUpdateContentSourceImages }: AdjustmentPanelProps) {
     const [activeSection, setActiveSection] = useState<Section>('hero');
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
     const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
@@ -178,7 +179,15 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
     const [lang, setLang] = useState<'ko' | 'en'>('ko');
 
     // AI 생성 이미지 및 다수 선택 상태
-    const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+    // 🔒 제품 탭: 미화된 이미지만 표시 (data.aiGeneratedProductImages)
+    // 효과 적용 이미지는 별도 배열로 관리
+    const beautifiedImages: string[] = data.aiGeneratedProductImages || [];
+    const [effectImages, setEffectImages] = useState<string[]>([]);
+
+    // 전체 AI 생성 이미지는 미화 + 효과 (하지만 제품 탭에서는 미화만 표시)
+    const generatedImages = beautifiedImages; // 제품 탭에서 표시용
+    const allAiGeneratedImages = [...beautifiedImages, ...effectImages]; // 전체 (콘텐츠 탭 등에서 사용)
+
     const [selectedUploadedIndices, setSelectedUploadedIndices] = useState<Set<number>>(new Set());
     const [selectedGeneratedIndices, setSelectedGeneratedIndices] = useState<Set<number>>(new Set());
 
@@ -636,7 +645,13 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                                 >
                                                     ↓
                                                 </button>
-                                                <button onClick={(e) => { e.stopPropagation(); setGeneratedImages(prev => prev.filter((_, i) => i !== idx)); setSelectedGeneratedIndices(prev => { const n = new Set(prev); n.delete(idx); return n; }); }} className="bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] hover:bg-red-500">×</button>
+                                                <button onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    // 미화 이미지 삭제: data.aiGeneratedProductImages 업데이트
+                                                    const newBeautified = beautifiedImages.filter((_, i) => i !== idx);
+                                                    onUpdate({ ...data, aiGeneratedProductImages: newBeautified });
+                                                    setSelectedGeneratedIndices(prev => { const n = new Set(prev); n.delete(idx); return n; });
+                                                }} className="bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] hover:bg-red-500">×</button>
                                             </div>
                                         </div>
                                     ))}
@@ -669,7 +684,8 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                         const results = await batchRemoveBackground(base64Images, (current, total) => setBgRemoveProgress({ current, total }));
                                         const successResults = results.filter(r => r.result);
                                         if (successResults.length > 0) {
-                                            setGeneratedImages(prev => [...prev, ...successResults.map(r => r.result!)]);
+                                            // 배경 제거 결과는 효과 이미지에 추가
+                                            setEffectImages(prev => [...prev, ...successResults.map(r => r.result!)]);
                                         }
                                         alert(`${successResults.length} ${lang === 'ko' ? '배경 제거 완료' : 'removed'}`);
                                     } catch (error) { console.error(error); alert(lang === 'ko' ? '배경 제거 실패' : 'Failed'); }
@@ -741,7 +757,8 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                 const doneResults = results.filter((r: any) => r.status === 'done' && r.url);
                                 if (doneResults.length > 0) {
                                     const newUrls = doneResults.map((r: any) => r.url!);
-                                    setGeneratedImages(prev => {
+                                    // 효과 적용 결과는 effectImages에 추가
+                                    setEffectImages(prev => {
                                         const combined = [...prev, ...newUrls];
                                         return Array.from(new Set(combined));
                                     });
@@ -765,23 +782,32 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                 {activeSection === 'contents' && (
                     <ContentGeneratorPanel
                         productImages={productFiles.map((f: File) => URL.createObjectURL(f))}
+                        productImageCount={productFiles.length}
+                        aiGeneratedCount={generatedImages.length}
                         onAddToPreview={onAddSectionWithImage}
                         lang={lang}
                         savedResults={data.contentGenerations || []}
                         onUpdateResults={(results) => onUpdate({ ...data, contentGenerations: results })}
                         onImageGenerated={(url) => {
-                            setGeneratedImages(prev => [...prev, url]);
+                            // 콘텐츠에서 생성된 이미지는 effectImages에 추가
+                            setEffectImages(prev => [...prev, url]);
                         }}
                         // Persist source images
                         savedSourceImages={data.imageUrls?.contentSourceImages || []}
                         onUpdateSourceImages={(newImages) => {
-                            onUpdate({
-                                ...data,
-                                imageUrls: {
-                                    ...data.imageUrls,
-                                    contentSourceImages: newImages
-                                }
-                            });
+                            // 🔒 Use functional update handler to preserve all imageUrls
+                            if (onUpdateContentSourceImages) {
+                                onUpdateContentSourceImages(newImages);
+                            } else {
+                                // Fallback to old method if handler not provided
+                                onUpdate({
+                                    ...data,
+                                    imageUrls: {
+                                        ...data.imageUrls,
+                                        contentSourceImages: newImages
+                                    }
+                                });
+                            }
                         }}
                     />
                 )}

@@ -501,16 +501,11 @@ export default function DetailGeneratorApp() {
                         }
                     );
 
-                    // 미화된 신발 이미지를 제품 파일로 변환
-                    for (let i = 0; i < result.beautifiedShoes.length; i++) {
-                        try {
-                            const response = await fetch(result.beautifiedShoes[i]);
-                            const blob = await response.blob();
-                            productFilesFromBlob.push(new File([blob], `beautified_${i + 1}.png`, { type: 'image/png' }));
-                        } catch (e) { /* ignore */ }
-                    }
+                    // 🔒 사용자 업로드 이미지와 AI 생성 이미지 분리
+                    // productFilesFromBlob = 원본 업로드 신발만 포함
+                    // beautifiedShoes = AI 생성 이미지 (generatedImages state로 관리)
 
-                    // 원본 업로드 신발 이미지도 제품 파일로 추가
+                    // 원본 업로드 신발 이미지만 productFiles에 추가
                     if (options.shoes && options.shoes.length > 0) {
                         for (let i = 0; i < options.shoes.length; i++) {
                             try {
@@ -527,6 +522,9 @@ export default function DetailGeneratorApp() {
                         }
                     }
 
+                    // 미화된 신발 이미지는 별도로 AI 생성 이미지 배열에 추가 (productFilesFromBlob에 넣지 않음)
+                    // 이 부분은 AdjustmentPanel의 generatedImages state에서 관리됨
+
                     // 모델 이미지 처리 (초기에 넣은 모델)
                     const modelFilesFromBlob: File[] = [];
                     const modelReq = (options as any).modelRequest; // QuickTransferOptions에 modelRequest가 있다고 가정
@@ -542,11 +540,28 @@ export default function DetailGeneratorApp() {
                         } catch (e) { console.error('Error processing model ref:', e); }
                     }
 
-                    setGeneratedData((prev: any) => ({
-                        ...prev,
-                        productFiles: [...(prev.productFiles || []), ...productFilesFromBlob],
-                        modelFiles: [...(prev.modelFiles || []), ...modelFilesFromBlob]
-                    }));
+                    setGeneratedData((prev: any) => {
+                        // 🔒 productFiles = 원본 업로드 신발만 (덮어쓰기, 머지 안함)
+                        // modelFiles는 기존 로직 유지
+                        const existingModelMap = new Map<string, File>();
+                        (prev.modelFiles || []).forEach((f: File) => existingModelMap.set(`${f.name}_${f.size}`, f));
+                        modelFilesFromBlob.forEach((f: File) => {
+                            const key = `${f.name}_${f.size}`;
+                            if (!existingModelMap.has(key)) existingModelMap.set(key, f);
+                        });
+
+                        // 🔒 미화된 신발 이미지만 저장 (새로운 Quick Transfer는 기존 이미지 리셋)
+                        // Quick Transfer 실행 시 미화 이미지 = result.beautifiedShoes만
+                        const newAiImages = result.beautifiedShoes;
+
+                        return {
+                            ...prev,
+                            // 🔒 productFiles는 원본 업로드만 포함 (덮어쓰기)
+                            productFiles: productFilesFromBlob,
+                            modelFiles: Array.from(existingModelMap.values()),
+                            aiGeneratedProductImages: newAiImages
+                        };
+                    });
 
                     setQuickTransferProgress(null);
                     setLoading(false);
@@ -1028,32 +1043,55 @@ export default function DetailGeneratorApp() {
     };
 
     // Add section with pre-generated image (for product effects)
+    // 🔒 Fixed race condition: Each call uses unique ID and closure-safe updates
     const handleAddSectionWithImage = (imageUrl: string, sectionName?: string) => {
-        const newId = `product-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        // Generate unique ID immediately (captured in closure)
+        const uniqueId = `product-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        console.log('[handleAddSectionWithImage] Adding image with ID:', uniqueId);
 
         // Create an image element to get natural dimensions
         const img = new Image();
         img.onload = () => {
             const aspectRatio = img.naturalHeight / img.naturalWidth;
             const calculatedHeight = 1000 * aspectRatio;
+            console.log('[handleAddSectionWithImage] Image loaded, ID:', uniqueId, 'height:', calculatedHeight);
 
-            setGeneratedData((prev: any) => ({
-                ...prev,
-                imageUrls: {
-                    ...prev.imageUrls,
-                    [newId]: imageUrl
+            // Batch all state updates to prevent race conditions
+            // Use functional updates to ensure we have latest state
+            setGeneratedData((prev: any) => {
+                // Double-check ID doesn't exist already
+                if (prev.imageUrls && prev.imageUrls[uniqueId]) {
+                    console.warn('[handleAddSectionWithImage] Duplicate ID detected, skipping:', uniqueId);
+                    return prev;
                 }
-            }));
+                return {
+                    ...prev,
+                    imageUrls: {
+                        ...prev.imageUrls,
+                        [uniqueId]: imageUrl
+                    }
+                };
+            });
+
             // sectionOrder에 추가 (size-guide/as-info/precautions 앞에 삽입)
             setSectionOrder(prev => {
+                // Check if already exists
+                if (prev.includes(uniqueId)) {
+                    console.warn('[handleAddSectionWithImage] ID already in sectionOrder, skipping:', uniqueId);
+                    return prev;
+                }
                 const detailSections = ['size-guide', 'as-info', 'precautions'];
                 const firstDetailIndex = prev.findIndex(id => detailSections.some(ds => id === ds || id.startsWith(ds + '-')));
                 if (firstDetailIndex === -1) {
-                    return [...prev, newId]; // 디테일 섹션이 없으면 끝에 추가
+                    return [...prev, uniqueId]; // 디테일 섹션이 없으면 끝에 추가
                 }
-                return [...prev.slice(0, firstDetailIndex), newId, ...prev.slice(firstDetailIndex)];
+                return [...prev.slice(0, firstDetailIndex), uniqueId, ...prev.slice(firstDetailIndex)];
             });
-            setSectionHeights(prev => ({ ...prev, [newId]: calculatedHeight }));
+
+            setSectionHeights(prev => ({ ...prev, [uniqueId]: calculatedHeight }));
+        };
+        img.onerror = () => {
+            console.error('[handleAddSectionWithImage] Failed to load image:', uniqueId);
         };
         img.src = imageUrl;
     };
@@ -1078,6 +1116,18 @@ export default function DetailGeneratorApp() {
 
     const handleUpdateImageTransform = (sectionId: string, transform: { scale: number, x: number, y: number }) => {
         setImageTransforms(prev => ({ ...prev, [sectionId]: transform }));
+    };
+
+    // 🔒 Functional update to preserve all imageUrls when updating content source images
+    const handleUpdateContentSourceImages = (newImages: string[]) => {
+        console.log('[DetailGeneratorApp] handleUpdateContentSourceImages called with', newImages.length, 'images');
+        setGeneratedData((prev: any) => ({
+            ...prev,
+            imageUrls: {
+                ...prev.imageUrls,
+                contentSourceImages: newImages
+            }
+        }));
     };
 
     // Model Analysis Handler
@@ -1203,6 +1253,13 @@ export default function DetailGeneratorApp() {
         try {
             const imageUrl = await fileToDataUrl(file);
             const type = await detectItemType(imageUrl);
+
+            // Duplicate check
+            const isDuplicate = uploadedProducts.some(p => p.file.name === file.name && p.file.size === file.size && p.file.lastModified === file.lastModified);
+            if (isDuplicate) {
+                console.log('Skipping duplicate file:', file.name);
+                return;
+            }
 
             const newProduct = {
                 id: Date.now().toString(),
@@ -1888,6 +1945,7 @@ export default function DetailGeneratorApp() {
                                     sectionHeights={sectionHeights}
                                     onUpdateHeights={(key: string, height: number) => setSectionHeights(prev => ({ ...prev, [key]: height }))}
                                     onSetActiveSection={setActiveSection}
+                                    onUpdateContentSourceImages={handleUpdateContentSourceImages}
                                 />
                             </div>
                         </div>

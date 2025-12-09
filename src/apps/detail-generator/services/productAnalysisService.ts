@@ -14,37 +14,46 @@ export const generateSizeGuideSketch = async (shoeImageBase64: string): Promise<
     const base64 = shoeImageBase64.includes('base64,') ? shoeImageBase64.split('base64,')[1] : shoeImageBase64;
 
     const prompt = `
-[TASK: CONVERT SHOE PHOTO TO SIZE GUIDE SKETCH]
+// === SIZE GUIDE SKETCH - FIXED 800x800 CANVAS ===
+// OUTPUT: EXACTLY 800x800 pixel SQUARE image
 
 [CRITICAL - VIEW REQUIREMENT]
 ⚠️ MUST SHOW LATERAL (OUTER) SIDE ONLY ⚠️
 - LATERAL = OUTER side of the shoe (the side facing outward when worn)
 - NEVER show MEDIAL (inner) side
-- If the input image shows medial/inner side, mentally flip it to show lateral/outer side
 - The OUTER side typically has brand logos, decorative elements, and no zipper
 
-[OUTPUT REQUIREMENTS]
-1. **STYLE**: PURE LINE DRAWING (Outline only).
-2. **NO SHADING**: Do NOT use grayscale shading or gradients. Just black lines on white background.
-3. **ORIENTATION**: The shoe MUST face LEFT (Toe pointing Left).
-4. **VIEW**: LATERAL (OUTER) Side Profile ONLY. Never inner/medial side.
-5. **SIZE**: The sketch should occupy approximately 70-80% of the canvas area, centered. Maintain consistent sizing.
-6. **DETAIL_LEVEL**: Minimalist. Only essential contour lines.
+[📐 FIXED CANVAS - 800x800 PIXELS]
+- Output MUST be EXACTLY 800x800 pixels
+- The drawing area is a PRE-DEFINED SQUARE
+- Draw the shoe CENTERED within this 800x800 square
+- The shoe drawing MUST NOT exceed 90% of the canvas (720px max width/height)
+- Leave 40px padding on all sides minimum
 
-[STRICT CONSTRAINT]
-- Output must look like a technical patent drawing.
-- White background (#FFFFFF).
-- Black stroke (#000000).
-- Show the OUTER side of the shoe, not the inner side with zipper or closure.
-- **Orientation**: LEFT-FACING (Toe to the Left).
-- **PADDING**: Keep 20% white space padding on all sides.
-- **SCALING**: Drawing must NOT touch edges. Scale down to fit 60-70% of canvas center.
+[✏️ DRAWING STYLE]
+- STYLE: PURE LINE DRAWING (Outline only)
+- NO SHADING: No grayscale, no gradients. Just black lines on white.
+- STROKE: Black (#000000) on White (#FFFFFF) background
+- DETAIL: Minimalist contour lines only
+- LOOK: Technical patent drawing style
+
+[👟 SHOE ORIENTATION]
+- DIRECTION: LEFT-FACING (Toe pointing Left)
+- VIEW: Side profile only
+- POSITION: Horizontally centered, vertically centered
+
+[📏 SIZING RULES]
+- Shoe drawing should be approximately 680-720 pixels wide
+- Keep shoe in proportion - don't stretch
+- Fill the canvas but maintain 40px border
+
+OUTPUT: 800x800 pixel SQUARE line drawing of shoe facing left.
 `;
 
     const result = await callGeminiSecure(
         prompt,
         [{ data: base64, mimeType: 'image/png' }],
-        { aspectRatio: '16:9' }
+        { aspectRatio: '1:1', imageSize: '1K' }
     );
 
     if (result.type !== 'image') {
