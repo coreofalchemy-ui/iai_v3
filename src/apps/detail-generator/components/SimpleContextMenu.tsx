@@ -19,6 +19,7 @@ type Props = {
     onFlipHorizontal?: () => void;
     hasImage?: boolean;
     onDownload?: () => void;
+    onCopy?: () => void;
 };
 
 export const SimpleContextMenu: React.FC<Props> = ({
@@ -40,6 +41,7 @@ export const SimpleContextMenu: React.FC<Props> = ({
     onFlipHorizontal,
     hasImage,
     onDownload,
+    onCopy,
 }) => {
     if (!visible) return null;
 
@@ -204,6 +206,20 @@ export const SimpleContextMenu: React.FC<Props> = ({
                 >
                     <span className={iconStyle}>⬇</span>
                     <span className={labelStyle}>다운로드</span>
+                </button>
+            )}
+
+            {/* Copy */}
+            {onCopy && hasImage && (
+                <button
+                    className={`${menuItemBase} border-b border-[#333] text-[#ccc] hover:bg-[#252525]`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onCopy();
+                    }}
+                >
+                    <span className={iconStyle}>⧉</span>
+                    <span className={labelStyle}>복사</span>
                 </button>
             )}
 

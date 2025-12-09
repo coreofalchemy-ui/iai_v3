@@ -164,6 +164,7 @@ Return valid JSON with this structure:
 
 IMPORTANT: 
 - ALL spec values MUST be in ENGLISH (color, upper, lining, outsole, origin)
+- MATERIAL FORMAT: If mixed, use "Material A + Material B" (e.g. "Mesh + Natural Leather", "Canvas + Suede").
 - technology should be only 2 lines (not 4)
 - stylingMatch and craftsmanship should be 4 lines
 `;

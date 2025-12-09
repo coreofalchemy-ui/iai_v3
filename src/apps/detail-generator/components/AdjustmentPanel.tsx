@@ -203,6 +203,9 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
     const [gridRows, setGridRows] = useState(2);
     const [gridHeight, setGridHeight] = useState(400);
 
+    // 효과 선택 상태
+    const [selectedEffect, setSelectedEffect] = useState<'beautify' | 'studio_minimal_prop' | 'studio_natural_floor' | 'studio_texture_emphasis' | 'studio_cinematic'>('beautify');
+
     // 디테일 패널 섹션 접기 상태
     const [collapsedSections, setCollapsedSections] = useState<{
         grid: boolean;
@@ -567,10 +570,10 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                 )}
 
                 {activeSection === 'products' && (
-                    <div className="space-y-2">
-                        {/* 제품 업로드 영역 */}
+                    <div className="space-y-3">
+                        {/* 1. 제품 업로드 영역 */}
                         <div
-                            style={{ minHeight: 100 }}
+                            style={{ minHeight: 80 }}
                             className={`border border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors ${productDragActive ? 'border-blue-500 bg-blue-50' : 'border-[#E2E2E8] hover:border-gray-400 bg-white'}`}
                             onDragOver={handleProductDragOver}
                             onDragLeave={handleProductDragLeave}
@@ -582,15 +585,14 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                             <p className="text-[11px] font-medium text-[#777]">{lang === 'ko' ? '이미지 드롭 또는 클릭' : 'Drop or click'}</p>
                         </div>
 
-                        {/* 분리형 이미지 패널 */}
-                        <div className="grid grid-cols-2 gap-2">
-                            {/* 왼쪽: 사용자 업로드 이미지 */}
+                        {/* 2. 사용자 업로드 이미지 - 가로 스크롤 */}
+                        {productFiles.length > 0 && (
                             <div className="bg-white border border-[#E2E2E8] rounded p-2">
-                                <div className="flex justify-between items-center mb-1.5">
+                                <div className="flex justify-between items-center mb-2">
                                     <span className="text-[12px] font-medium text-[#666]">{lang === 'ko' ? '사용자 업로드' : 'User Upload'}</span>
-                                    <span className="text-[12px] text-[#999]">{productFiles.length}</span>
+                                    <span className="text-[11px] text-[#999]">{productFiles.length}장</span>
                                 </div>
-                                <div className="grid grid-cols-1 gap-1 min-h-[120px] max-h-[400px] overflow-y-auto">
+                                <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
                                     {productFiles.map((file: File, idx: number) => (
                                         <div
                                             key={idx}
@@ -600,24 +602,25 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                                 else newSet.add(idx);
                                                 setSelectedUploadedIndices(newSet);
                                             }}
-                                            className={`relative aspect-square rounded overflow-hidden cursor-pointer ring-2 ${selectedUploadedIndices.has(idx) ? 'ring-white' : 'ring-transparent hover:ring-[#555]'}`}
+                                            className={`relative flex-shrink-0 w-16 h-16 rounded overflow-hidden cursor-pointer ring-2 ${selectedUploadedIndices.has(idx) ? 'ring-blue-500' : 'ring-transparent hover:ring-[#555]'}`}
                                         >
                                             <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" alt={`Upload ${idx}`} />
-                                            {selectedUploadedIndices.has(idx) && <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center text-black text-[10px]">✓</div>}
+                                            {selectedUploadedIndices.has(idx) && <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-white text-[10px]">✓</div>}
                                             <button onClick={(e) => { e.stopPropagation(); removeProductFile(idx); setSelectedUploadedIndices(prev => { const n = new Set(prev); n.delete(idx); return n; }); }} className="absolute top-0.5 right-0.5 bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] hover:bg-red-500">×</button>
                                         </div>
                                     ))}
-                                    {productFiles.length === 0 && <div className="text-center text-[10px] text-[#555] py-4">{lang === 'ko' ? '없음' : 'None'}</div>}
                                 </div>
                             </div>
+                        )}
 
-                            {/* 오른쪽: AI 생성 이미지 */}
-                            <div className="bg-white border border-[#E2E2E8] rounded p-2">
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[12px] font-medium text-[#666]">{lang === 'ko' ? 'AI 생성' : 'AI Gen'}</span>
-                                    <span className="text-[12px] text-[#999]">{generatedImages.length}</span>
-                                </div>
-                                <div className="grid grid-cols-1 gap-1 min-h-[120px] max-h-[400px] overflow-y-auto">
+                        {/* 3. AI 생성 이미지 - 더 크게, 세로 스크롤 */}
+                        <div className="bg-white border border-[#E2E2E8] rounded p-3">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-[13px] font-semibold text-[#333]">{lang === 'ko' ? 'AI 생성' : 'AI Generated'}</span>
+                                <span className="text-[11px] text-[#999]">{generatedImages.length}장</span>
+                            </div>
+                            {generatedImages.length > 0 ? (
+                                <div className="grid grid-cols-2 gap-2 max-h-[600px] overflow-y-auto">
                                     {generatedImages.map((url: string, idx: number) => (
                                         <div
                                             key={idx}
@@ -627,11 +630,11 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                                 else newSet.add(idx);
                                                 setSelectedGeneratedIndices(newSet);
                                             }}
-                                            className={`relative aspect-square rounded overflow-hidden cursor-pointer ring-2 ${selectedGeneratedIndices.has(idx) ? 'ring-white' : 'ring-transparent hover:ring-[#555]'}`}
+                                            className={`relative aspect-square rounded-lg overflow-hidden cursor-pointer ring-2 ${selectedGeneratedIndices.has(idx) ? 'ring-blue-500' : 'ring-transparent hover:ring-[#555]'}`}
                                         >
                                             <img src={url} className="w-full h-full object-cover" alt={`Generated ${idx}`} />
-                                            {selectedGeneratedIndices.has(idx) && <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center text-black text-[10px]">✓</div>}
-                                            <div className="absolute top-0.5 right-0.5 flex gap-1">
+                                            {selectedGeneratedIndices.has(idx) && <div className="absolute top-1 left-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-white text-[11px] font-bold">✓</div>}
+                                            <div className="absolute top-1 right-1 flex gap-1">
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -640,66 +643,75 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                                         a.download = `ai_gen_${idx}_${Date.now()}.png`;
                                                         a.click();
                                                     }}
-                                                    className="bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] hover:bg-blue-500"
+                                                    className="bg-black/70 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] hover:bg-blue-500"
                                                     title="Download"
-                                                >
-                                                    ↓
-                                                </button>
+                                                >↓</button>
                                                 <button onClick={(e) => {
                                                     e.stopPropagation();
-                                                    // 미화 이미지 삭제: data.aiGeneratedProductImages 업데이트
                                                     const newBeautified = beautifiedImages.filter((_, i) => i !== idx);
                                                     onUpdate({ ...data, aiGeneratedProductImages: newBeautified });
                                                     setSelectedGeneratedIndices(prev => { const n = new Set(prev); n.delete(idx); return n; });
-                                                }} className="bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] hover:bg-red-500">×</button>
+                                                }} className="bg-black/70 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] hover:bg-red-500">×</button>
                                             </div>
                                         </div>
                                     ))}
-                                    {generatedImages.length === 0 && <div className="text-center text-[10px] text-[#555] py-4">{lang === 'ko' ? '없음' : 'None'}</div>}
                                 </div>
-                            </div>
+                            ) : (
+                                <div className="text-center text-[11px] text-[#999] py-8 bg-[#f9f9f9] rounded-lg">
+                                    {lang === 'ko' ? '아직 생성된 이미지가 없습니다' : 'No generated images yet'}
+                                </div>
+                            )}
                         </div>
 
-                        {/* 선택된 이미지 수 표시 */}
+                        {/* 4. 선택 정보 표시 */}
                         {(selectedUploadedIndices.size > 0 || selectedGeneratedIndices.size > 0) && (
-                            <div className="text-[11px] text-[#666] text-center">
-                                {lang === 'ko' ? `${selectedUploadedIndices.size + selectedGeneratedIndices.size}개 선택됨` : `${selectedUploadedIndices.size + selectedGeneratedIndices.size} selected`}
+                            <div className="text-[12px] text-blue-600 text-center font-medium bg-blue-50 py-2 rounded">
+                                {lang === 'ko' ? `${selectedUploadedIndices.size + selectedGeneratedIndices.size}개 이미지 선택됨` : `${selectedUploadedIndices.size + selectedGeneratedIndices.size} images selected`}
                             </div>
                         )}
 
-                        {/* 액션 버튼들 */}
-                        <div className="space-y-1.5">
-                            <button
-                                onClick={async () => {
-                                    if (isRemovingBg || productFiles.length === 0) return;
-                                    setIsRemovingBg(true);
-                                    setBgRemoveProgress({ current: 0, total: productFiles.length });
-                                    try {
-                                        const base64Images: string[] = [];
-                                        for (const file of productFiles) {
-                                            const reader = new FileReader();
-                                            const base64 = await new Promise<string>((resolve) => { reader.onload = (e) => resolve(e.target?.result as string); reader.readAsDataURL(file); });
-                                            base64Images.push(base64);
-                                        }
-                                        const results = await batchRemoveBackground(base64Images, (current, total) => setBgRemoveProgress({ current, total }));
-                                        const successResults = results.filter(r => r.result);
-                                        if (successResults.length > 0) {
-                                            // 배경 제거 결과는 효과 이미지에 추가
-                                            setEffectImages(prev => [...prev, ...successResults.map(r => r.result!)]);
-                                        }
-                                        alert(`${successResults.length} ${lang === 'ko' ? '배경 제거 완료' : 'removed'}`);
-                                    } catch (error) { console.error(error); alert(lang === 'ko' ? '배경 제거 실패' : 'Failed'); }
-                                    finally { setIsRemovingBg(false); setBgRemoveProgress({ current: 0, total: 0 }); }
-                                }}
-                                disabled={isRemovingBg || productFiles.length === 0}
-                                className={`w-full py-1.5 text-[11px] font-medium rounded transition-colors ${isRemovingBg || productFiles.length === 0 ? 'bg-gray-100 text-gray-400' : 'bg-[#111] text-white hover:bg-black border border-transparent'}`}
-                            >
-                                {isRemovingBg ? `${bgRemoveProgress.current}/${bgRemoveProgress.total}` : (lang === 'ko' ? '배경 제거' : 'Remove BG')}
-                            </button>
+                        {/* 5. 효과 버튼들 */}
+                        <div className="bg-white border border-[#E2E2E8] rounded p-3">
+                            <div className="text-[12px] font-semibold text-[#333] mb-2">{lang === 'ko' ? '효과' : 'Effects'}</div>
+                            <div className="space-y-1.5">
+                                {([
+                                    { id: 'beautify', name: lang === 'ko' ? '미화' : 'Beautify' },
+                                    { id: 'studio_minimal_prop', name: lang === 'ko' ? '미니멀 소품' : 'Minimal' },
+                                    { id: 'studio_natural_floor', name: lang === 'ko' ? '자연광' : 'Natural' },
+                                    { id: 'studio_texture_emphasis', name: lang === 'ko' ? '텍스처' : 'Texture' },
+                                    { id: 'studio_cinematic', name: lang === 'ko' ? '시네마틱' : 'Cinematic' }
+                                ] as { id: 'beautify' | 'studio_minimal_prop' | 'studio_natural_floor' | 'studio_texture_emphasis' | 'studio_cinematic', name: string }[]).map(effect => (
+                                    <button
+                                        key={effect.id}
+                                        onClick={() => setSelectedEffect(effect.id)}
+                                        style={{
+                                            width: '100%',
+                                            textAlign: 'left',
+                                            padding: '10px 12px',
+                                            borderRadius: 8,
+                                            fontSize: 12,
+                                            fontWeight: 500,
+                                            background: selectedEffect === effect.id ? '#111' : '#f5f5f5',
+                                            color: selectedEffect === effect.id ? '#FFF' : '#666',
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            border: selectedEffect === effect.id ? 'none' : '1px solid #E2E2E8'
+                                        }}
+                                    >
+                                        <span>{effect.name}</span>
+                                        <span style={{ fontSize: 11, color: selectedEffect === effect.id ? 'rgba(255,255,255,0.7)' : '#999' }}>
+                                            {selectedUploadedIndices.size + selectedGeneratedIndices.size}개
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
 
+                        {/* 6. 액션 버튼들 - 맨 아래 */}
+                        <div className="space-y-2 pt-2">
                             <button
                                 onClick={() => {
-                                    // 선택된 이미지들을 프리뷰에 추가
                                     const selectedUrls: string[] = [];
                                     selectedUploadedIndices.forEach(idx => {
                                         if (productFiles[idx]) {
@@ -722,50 +734,94 @@ export default function AdjustmentPanel({ data, onUpdate, activeSection: preview
                                     setSelectedGeneratedIndices(new Set());
                                 }}
                                 disabled={selectedUploadedIndices.size === 0 && selectedGeneratedIndices.size === 0}
-                                className={`w-full py-2 text-[12px] font-bold rounded transition-colors ${selectedUploadedIndices.size === 0 && selectedGeneratedIndices.size === 0 ? 'bg-[#3c3c3c] text-[#666]' : 'bg-white text-black hover:bg-[#e5e5e5]'}`}
+                                className={`w-full py-2 text-[12px] font-medium rounded transition-colors ${selectedUploadedIndices.size === 0 && selectedGeneratedIndices.size === 0 ? 'bg-[#e5e5e5] text-[#999]' : 'bg-white text-black hover:bg-[#f0f0f0] border border-[#ddd]'}`}
                             >
-                                {lang === 'ko' ? '프리뷰 적용' : 'Apply to Preview'} {(selectedUploadedIndices.size + selectedGeneratedIndices.size) > 0 && `(${selectedUploadedIndices.size + selectedGeneratedIndices.size})`}
+                                {lang === 'ko' ? '프리뷰에 추가' : 'Add to Preview'}
+                            </button>
+
+                            <button
+                                onClick={async () => {
+                                    // 선택된 이미지 URL 수집
+                                    const selectedUrls: string[] = [];
+                                    for (const idx of selectedUploadedIndices) {
+                                        if (productFiles[idx]) {
+                                            const file = productFiles[idx];
+                                            const url = await new Promise<string>((resolve) => {
+                                                const reader = new FileReader();
+                                                reader.onload = (e) => resolve(e.target?.result as string);
+                                                reader.readAsDataURL(file);
+                                            });
+                                            selectedUrls.push(url);
+                                        }
+                                    }
+                                    for (const idx of selectedGeneratedIndices) {
+                                        if (generatedImages[idx]) {
+                                            selectedUrls.push(generatedImages[idx]);
+                                        }
+                                    }
+
+                                    if (selectedUrls.length === 0) {
+                                        alert(lang === 'ko' ? '이미지를 선택해주세요' : 'Select images first');
+                                        return;
+                                    }
+
+                                    // ProductEnhancementPanel의 로직을 직접 호출
+                                    const { applyProductEffect } = await import('../services/productEnhancement');
+
+                                    setIsGeneratingAI(true);
+                                    try {
+                                        const results: string[] = [];
+                                        for (let i = 0; i < selectedUrls.length; i++) {
+                                            const url = selectedUrls[i];
+                                            // URL을 File로 변환
+                                            const response = await fetch(url);
+                                            const blob = await response.blob();
+                                            const file = new File([blob], `selected-${i}.png`, { type: 'image/png' });
+
+                                            const generatedUrl = await applyProductEffect(
+                                                [file],
+                                                selectedEffect,
+                                                (msg) => console.log(`[Effect ${i + 1}/${selectedUrls.length}] ${msg}`)
+                                            );
+                                            results.push(generatedUrl);
+                                        }
+
+                                        // 결과를 AI 생성 이미지에 추가
+                                        const currentImages = data.aiGeneratedProductImages || [];
+                                        const newImages = [...currentImages, ...results];
+                                        onUpdate({ ...data, aiGeneratedProductImages: newImages });
+
+                                        // 프리뷰에도 추가
+                                        results.forEach(url => {
+                                            onAddSectionWithImage?.(url, `effect-${Date.now()}`);
+                                        });
+
+                                        setSelectedUploadedIndices(new Set());
+                                        setSelectedGeneratedIndices(new Set());
+                                        alert(lang === 'ko' ? `${results.length}개 이미지 생성 완료!` : `${results.length} images generated!`);
+                                    } catch (error) {
+                                        console.error('Effect generation error:', error);
+                                        alert(lang === 'ko' ? '효과 적용 실패' : 'Effect failed');
+                                    } finally {
+                                        setIsGeneratingAI(false);
+                                    }
+                                }}
+                                disabled={isGeneratingAI || (selectedUploadedIndices.size === 0 && selectedGeneratedIndices.size === 0)}
+                                className={`w-full py-3 text-[13px] font-bold rounded-lg transition-colors ${isGeneratingAI || (selectedUploadedIndices.size === 0 && selectedGeneratedIndices.size === 0) ? 'bg-[#3c3c3c] text-[#666]' : 'bg-[#111] text-white hover:bg-black'}`}
+                            >
+                                {isGeneratingAI ? (
+                                    <span className="flex items-center justify-center gap-2">
+                                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                        </svg>
+                                        {lang === 'ko' ? '생성 중...' : 'Generating...'}
+                                    </span>
+                                ) : (
+                                    lang === 'ko' ? `이미지 ${selectedUploadedIndices.size + selectedGeneratedIndices.size}개 생성` : `Generate ${selectedUploadedIndices.size + selectedGeneratedIndices.size} images`
+                                )}
                             </button>
                         </div>
-
-                        {/* 구분선 */}
-                        <div className="border-t border-[#3c3c3c] my-3"></div>
-
-                        {/* 구분선 */}
-                        <div className="border-t border-[#3c3c3c] my-3"></div>
-
-                        <ProductEnhancementPanel
-                            productFiles={productFiles}
-                            previewSections={(() => {
-                                const sections: { id: string; url: string }[] = [];
-                                if (data.imageUrls) {
-                                    Object.entries(data.imageUrls).forEach(([key, url]) => {
-                                        // 제품 이미지 섹션만 필터링 ('product-' 접두사로 시작하는 것만)
-                                        if (key.startsWith('product-') && typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:'))) {
-                                            sections.push({ id: key, url: url });
-                                        }
-                                    });
-                                }
-                                return sections;
-                            })()}
-                            lang={lang}
-                            onUpdatePreview={(sectionId, imageUrl) => {
-                                const newImageUrls = { ...data.imageUrls, [sectionId]: imageUrl };
-                                onUpdate({ ...data, imageUrls: newImageUrls });
-                            }}
-                            onResultsUpdate={(results: any) => {
-                                const doneResults = results.filter((r: any) => r.status === 'done' && r.url);
-                                if (doneResults.length > 0) {
-                                    const newUrls = doneResults.map((r: any) => r.url!);
-                                    // 효과 적용 결과는 effectImages에 추가
-                                    setEffectImages(prev => {
-                                        const combined = [...prev, ...newUrls];
-                                        return Array.from(new Set(combined));
-                                    });
-                                }
-                            }}
-                            onAddSectionWithImage={onAddSectionWithImage}
-                        />
                     </div>
                 )}
 

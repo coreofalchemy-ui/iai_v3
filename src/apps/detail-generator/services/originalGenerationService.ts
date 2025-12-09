@@ -91,20 +91,40 @@ export async function regenerateImageWithSpecificPose(
 
     const baseB64 = await urlToBase64(baseImageUrl);
 
-    const prompt = `// --- TASK: POSE_MODIFICATION (SECURE) ---
-// CHANGE POSE TO: ${pose}
-// OUTPUT: Portrait (3:4).
-//
-// [RULES]
-// 1. FACE & IDENTITY: MUST MATCH SOURCE.
-// 2. CLOTHING: Keep upper body clothing identical.
-// 3. SHOES: Keep the shoes PIXEL-PERFECT identical.
-// 4. BACKGROUND: Keep the background identical.
-//
-// [CRITICAL SHOE RULES]
-// - TEXTURE, OUTSOLE, STITCHING, LACES, LOGO = 100% identical.
-//
-// REFERENCE_IMAGE: [Provided image]`;
+    const prompt = `// --- TASK: FULL_BODY_POSE_MODIFICATION ---
+// ACTION: Change the pose of the model to: "${pose}"
+// INPUT: Reference Image (Source)
+
+// [CRITICAL RULES]
+// 1. **FRAMING**: FULL BODY SHOT (Head to Toe). DO NOT CROP HEAD.
+// 2. **IDENTITY LOCK**: Face, Hair, and Skin Tone must be PIXEL-PERFECT match to source.
+// 3. **APPAREL LOCK**: Upper body clothing and SHOES must remain IDENTICAL.
+// 4. **BACKGROUND**: Keep the background IDENTICAL to source.
+
+// [QUALITY - CRITICAL]
+// - Photorealistic, Commercial Photography style
+// - 8K Resolution, Ultra-Sharp Focus
+// - Commercial Catalog Style quality
+// - NO BLUR, NO artistic haze, NO low resolution
+
+// [COLOR PRESERVATION]
+// - COPY exact colors from source - no filter, no color grading
+// - If source has warm tones, output has warm tones
+// - Color mismatch = FAILURE
+
+// [SHOE RULES]
+// - TEXTURE, OUTSOLE, STITCHING, LACES, LOGO = 100% identical to source
+
+// [NEGATIVE CONSTRAINTS]
+// - No blur
+// - No artistic haze
+// - No distortion
+
+// [OUTPUT]
+// Photorealistic full-body photo with modified pose.
+// Sharp 8K quality, identical identity/clothes/colors to source.
+
+SOURCE_IMAGE: [Provided image]`;
 
     const result = await callGeminiSecure(
         prompt,
@@ -126,16 +146,45 @@ export async function generateVerticalLegsCrop(baseImageUrl: string): Promise<st
 
     const baseB64 = await urlToBase64(baseImageUrl);
 
-    const prompt = `// --- TASK: PORTRAIT_LEG_SHOT_GENERATION (SECURE) ---
-// ACTION: Generate a PORTRAIT IMAGE (3:4) focusing on model's legs and shoes.
-//
-// [COMPOSITION RULES]
-// 1. FRAME: Portrait (3:4).
-// 2. CROP: Cut off at waist. Show waist down to feet.
-// 3. FILL: Legs must fill the frame.
-// 4. IDENTITY: Keep trousers, skin tone, and shoes PIXEL-PERFECT identical.
-//
-// SOURCE_IMAGE: [Provided image]`;
+    // 클로즈업 컷 - 허리 아래만
+    const prompt = `// --- TASK: CLOSEUP_POSE_MODIFICATION ---
+// ACTION: Create a lower-body closeup from the source image.
+// INPUT: Reference Image (Source)
+
+// [FRAMING – WAIST-DOWN ONLY]
+// 1. This image is a CLOSEUP of the LOWER BODY only.
+// 2. Top of frame = waist / belt / hip line.
+// 3. Bottom of frame = shoes on the floor.
+// 4. NOTHING above the waist may appear in the frame.
+// 5. The head, face, neck, shoulders, and chest MUST NOT be visible at all.
+
+// [SHOT TYPE]
+// - Portrait orientation, 3:4 aspect ratio.
+// - Fill the frame with legs and shoes.
+// - This is NOT a full body shot. It is a lower-body product closeup.
+
+// [FOCUS & QUALITY]
+// - Camera focus MUST be on the shoes.
+// - Photorealistic, commercial photography.
+// - 8K resolution look, ultra sharp.
+// - No blur, no artistic haze, no low resolution, no distortion.
+
+// [DETAIL PRESERVATION]
+// 1. Shoes must be identical to the source (design, color, material, texture).
+// 2. Trousers/pants must match the source in color, fabric, and fit.
+// 3. Lighting and floor/background texture should be consistent with the source lower body.
+
+// [POSE]
+// 1. Keep the same pose as the source image.
+// 2. Do NOT change the outfit or shoes.
+// 3. This is the same model and same clothing, seen only from waist down.
+
+// [OUTPUT SUMMARY]
+// - Generate a new photorealistic commercial fashion photo.
+// - Waist-down only, legs and shoes in a 3:4 portrait frame.
+// - Identity, outfit, shoes, and scene are preserved from source.
+
+SOURCE_IMAGE: [Provided image]`;
 
     const result = await callGeminiSecure(
         prompt,

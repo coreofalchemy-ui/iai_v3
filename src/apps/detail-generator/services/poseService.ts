@@ -4,6 +4,7 @@
  */
 
 import { callGeminiSecure, extractBase64, urlToBase64 } from '../../../lib/geminiClient';
+import { generateVerticalLegsCrop } from './originalGenerationService';
 
 // ========================================
 // 40 POSE DEFINITIONS
@@ -132,57 +133,119 @@ export async function generatePoseVariation(
     gender: Gender,
     type: 'full' | 'closeup'
 ): Promise<PoseGenerationResult> {
-    console.log(`🎨 Generating pose (SECURE): ${pose.id}`);
+    console.log(`🎨 Generating pose (SECURE): ${pose.id}, type: ${type}`);
+
     const base64 = await urlToBase64(baseImageUrl);
 
-    const frameNote = type === 'closeup'
-        ? `[FRAME] CLOSE-UP shot focusing on lower body (waist down to feet).`
-        : `[FRAME] FULL-BODY shot. Show entire figure from head to toe.`;
+    // 클로즈업은 자세 변경 + 허리 아래만
+    if (type === 'closeup') {
+        console.log(`🦵 Generating closeup with pose: ${pose.description}`);
 
-    const genderNote = gender === 'FEMALE'
-        ? `Model is FEMALE. Maintain feminine proportions.`
-        : `Model is MALE. Emphasize wide stance and grounded weight.`;
+        // 클로즈업 컷 자세 변경 (허리 아래만)
+        const closeupPrompt = `// --- TASK: CLOSEUP_POSE_MODIFICATION ---
+// ACTION: Change the leg and foot pose to: "${pose.description}"
+// INPUT: Reference Image (Source)
 
-    const prompt = `
-[TASK: FASHION MODEL POSE VARIATION]
-Input: A photo of a fashion model wearing specific clothing and shoes.
+// [FRAMING – WAIST-DOWN ONLY]
+// 1. This image is a CLOSEUP of the LOWER BODY only.
+// 2. Top of frame = waist / belt / hip line.
+// 3. Bottom of frame = shoes on the floor.
+// 4. NOTHING above the waist may appear in the frame.
+// 5. The head, face, neck, shoulders, and chest MUST NOT be visible at all.
 
-[CRITICAL RULES]
-1. **IDENTITY LOCK**: Keep model's FACE 100% IDENTICAL.
-2. **OUTFIT LOCK**: Keep ALL CLOTHING EXACTLY THE SAME.
-3. **SHOES LOCK**: Keep SHOES 100% IDENTICAL.
-4. **BACKGROUND LOCK**: Keep BACKGROUND 100% IDENTICAL.
-5. **ONLY CHANGE POSE**: Apply new pose below.
+// [SHOT TYPE]
+// - Portrait orientation, 3:4 aspect ratio.
+// - Fill the frame with legs and shoes.
+// - This is NOT a full body shot. It is a lower-body product closeup.
 
-${frameNote}
+// [FOCUS & QUALITY]
+// - Camera focus MUST be on the shoes.
+// - Photorealistic, commercial photography.
+// - 8K resolution look, ultra sharp.
+// - No blur, no artistic haze, no low resolution, no distortion.
 
-${genderNote}
+// [DETAIL PRESERVATION]
+// 1. Shoes must be identical to the source (design, color, material, texture).
+// 2. Trousers/pants must match the source in color, fabric, and fit.
+// 3. Lighting and floor/background texture should be consistent with the source lower body.
 
-[NEW POSE TO APPLY]
-${pose.description}
+// [POSE]
+// 1. Only change the pose of the legs and feet to match "${pose.description}".
+// 2. Do NOT change the outfit or shoes.
+// 3. This is the same model and same clothing, seen only from waist down.
 
-[IMAGE QUALITY - 매우 중요]
-- **SHARP FOCUS**: Image MUST be crystal clear, NOT blurry or hazy.
-- **HIGH RESOLUTION**: Ultra-high definition, 8K quality, professional photography.
-- **CLEAN EDGES**: All edges and details must be crisp and well-defined.
-- **NO BLUR**: Absolutely NO motion blur, focus blur, or softness.
+// [OUTPUT SUMMARY]
+// - Generate a new photorealistic commercial fashion photo.
+// - Waist-down only, legs and shoes in a 3:4 portrait frame.
+// - Pose is changed to "${pose.description}", but identity, outfit, shoes, and scene are preserved.
 
-[NATURAL POSE RULES - 자연스러운 자세]
-- **NATURAL LEG POSITIONING**: Legs should be naturally positioned, NOT unnaturally wide apart.
-- **FASHION EDITORIAL STYLE**: Natural, elegant poses like professional fashion magazine shoots.
-- **AVOID AWKWARD STANCES**: No exaggerated or uncomfortable-looking leg spreads.
-- **COMFORTABLE POSTURE**: The model should look relaxed and natural, not stiff or forced.
+SOURCE_IMAGE: [Provided image]`;
 
-[STYLE]
-- High-end fashion photography
-- Professional studio lighting
-- 8K resolution, photorealistic, razor-sharp focus
-`;
+        const result = await callGeminiSecure(
+            closeupPrompt,
+            [{ data: base64, mimeType: 'image/jpeg' }],
+            { aspectRatio: '3:4' }
+        );
+
+        if (result.type !== 'image') {
+            throw new Error('Failed to generate closeup pose variation');
+        }
+
+        return {
+            imageUrl: result.data,
+            poseId: pose.id,
+            poseDescription: pose.description
+        };
+    }
+
+    // 풀바디는 자세만 변경, 나머지 동일
+
+    // 모델 컷 자세 변경 (전신 유지)
+    const fullBodyPrompt = `// --- TASK: FULL_BODY_POSE_MODIFICATION ---
+// ACTION: Change the pose of the model to: "${pose.description}"
+// INPUT: Reference Image (Source)
+
+// [CRITICAL RULES]
+// 1. **FRAMING**: FULL BODY SHOT (Head to Toe). DO NOT CROP HEAD.
+// 2. **IDENTITY LOCK**: Face, Hair, and Skin Tone must be PIXEL-PERFECT match to source.
+// 3. **APPAREL LOCK**: Upper body clothing and SHOES must remain IDENTICAL.
+// 4. **BACKGROUND**: Keep the background IDENTICAL to source.
+
+// [QUALITY - CRITICAL]
+// - Photorealistic, Commercial Photography style
+// - 8K Resolution, Ultra-Sharp Focus
+// - Commercial Catalog Style quality
+// - NO BLUR, NO artistic haze, NO low resolution
+
+// [COLOR PRESERVATION]
+// - COPY exact colors from source - no filter, no color grading
+// - If source has warm tones, output has warm tones
+// - If source has film grain, output has film grain
+// - Color mismatch = FAILURE
+
+// [INSTRUCTION]
+// Keep everything IDENTICAL except the pose.
+// Only move the limbs to match the requested pose.
+// Ensure the shoes are in sharp focus.
+// ${gender === 'FEMALE' ? 'Model is FEMALE.' : 'Model is MALE.'}
+
+// [NEGATIVE CONSTRAINTS]
+// - No blur
+// - No artistic haze
+// - No low resolution
+// - No distortion
+// - No color changes
+
+// [OUTPUT]
+// Photorealistic full-body photo with modified pose.
+// Sharp 8K quality, identical identity/clothes/colors to source.
+
+SOURCE_IMAGE: [Provided image]`;
 
     const result = await callGeminiSecure(
-        prompt,
+        fullBodyPrompt,
         [{ data: base64, mimeType: 'image/jpeg' }],
-        { aspectRatio: type === 'closeup' ? '3:4' : '4:3' }
+        { aspectRatio: '4:3' }
     );
 
     if (result.type !== 'image') {

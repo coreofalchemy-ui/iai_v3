@@ -73,11 +73,11 @@ const MOCK_ERROR_JSON = JSON.stringify({
 });
 
 /**
- * 이미지 최적화 (사이즈 줄임 - 더 공격적으로)
+ * 이미지 최적화 (품질 유지 - 색상 손실 방지)
  */
-async function optimizeImage(base64Str: string, maxWidth = 800): Promise<string> {
-    // 이미 최적화된 경우 건너뛰기 (약 200KB 이하면 패스)
-    if (base64Str.length < 250000) return base64Str;
+async function optimizeImage(base64Str: string, maxWidth = 1500): Promise<string> {
+    // 이미 최적화된 경우 건너뛰기 (약 400KB 이하면 패스)
+    if (base64Str.length < 500000) return base64Str;
 
     return new Promise((resolve) => {
         const img = new Image();
@@ -96,8 +96,8 @@ async function optimizeImage(base64Str: string, maxWidth = 800): Promise<string>
             const ctx = canvas.getContext('2d');
             if (ctx) {
                 ctx.drawImage(img, 0, 0, width, height);
-                // JPEG 포맷으로 변환하여 용량 대폭 감소 (Quality 0.7)
-                const optimized = canvas.toDataURL('image/jpeg', 0.7);
+                // 🔧 PNG 포맷 유지하여 색상 손실 방지 (JPEG 압축 X)
+                const optimized = canvas.toDataURL('image/png');
                 resolve(optimized.split('base64,')[1]);
             } else {
                 resolve(base64Str);

@@ -1408,19 +1408,21 @@ export default function DetailGeneratorApp() {
         const sectionId = contextMenu.targetId;
         if (!sectionId) return;
 
-        // Find uploaded shoes
-        const shoes = uploadedProducts.find(p => p.type === 'shoes');
-        if (!shoes) {
-            alert('업로드된 신발 제품이 없습니다. 먼저 신발 사진을 업로드해주세요.');
+        // 🔧 수정: generatedData.productFiles에서 업로드된 제품 이미지 사용
+        const productFiles = generatedData.productFiles || [];
+        if (productFiles.length === 0) {
+            alert('업로드된 신발 제품이 없습니다. 먼저 제품탭에서 신발 사진을 업로드해주세요.');
             return;
         }
 
         setContextMenu(prev => ({ ...prev, visible: false }));
 
         // Confirm
-        if (!confirm(`선택한 모델에 신발을 착용하시겠습니까?`)) return;
+        if (!confirm(`선택한 모델에 신발을 착용하시겠습니까? (업로드된 ${productFiles.length}장의 제품 이미지 사용)`)) return;
 
-        await handleCompositeImage(sectionId, { url: shoes.url, type: 'shoes' });
+        // 첫 번째 제품 파일의 URL 생성
+        const productUrl = URL.createObjectURL(productFiles[0]);
+        await handleCompositeImage(sectionId, { url: productUrl, type: 'shoes' });
     };
 
     // Color Change Handlers - 클릭 위치 기반으로 의류 부위 자동 감지
@@ -1846,6 +1848,61 @@ export default function DetailGeneratorApp() {
         setContextMenu(prev => ({ ...prev, visible: false }));
     };
 
+    // Section Copy Handler - 섹션 복사 후 바로 아래에 붙여넣기
+    const handleCopySection = () => {
+        const sectionId = contextMenu.targetId;
+        if (!sectionId) return;
+
+        const imageUrl = generatedData.imageUrls?.[sectionId];
+        if (!imageUrl || imageUrl === 'loading' || imageUrl === 'SPACER') {
+            alert('복사할 이미지가 없습니다.');
+            return;
+        }
+
+        // Generate new unique section ID
+        const newSectionId = `copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        // Get original section's height
+        const originalHeight = sectionHeights[sectionId] || 800;
+
+        // Copy flip state if exists
+        const isFlipped = flippedSections.has(sectionId);
+
+        // Add image URL for new section
+        setGeneratedData((prev: any) => ({
+            ...prev,
+            imageUrls: {
+                ...prev.imageUrls,
+                [newSectionId]: imageUrl
+            }
+        }));
+
+        // Insert new section immediately after the original
+        setSectionOrder(prev => {
+            const currentIndex = prev.indexOf(sectionId);
+            if (currentIndex === -1) return prev;
+            const newOrder = [...prev];
+            newOrder.splice(currentIndex + 1, 0, newSectionId);
+            return newOrder;
+        });
+
+        // Set height for new section
+        setSectionHeights(prev => ({ ...prev, [newSectionId]: originalHeight }));
+
+        // Copy flip state if original was flipped
+        if (isFlipped) {
+            setFlippedSections(prev => new Set([...prev, newSectionId]));
+        }
+
+        // Copy transform if exists
+        if (imageTransforms[sectionId]) {
+            setImageTransforms(prev => ({ ...prev, [newSectionId]: imageTransforms[sectionId] }));
+        }
+
+        setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
+        console.log(`✅ Section ${sectionId} copied as ${newSectionId}`);
+    };
+
     return (
         <div className="flex flex-col h-screen bg-[#F5F5F7] overflow-hidden">
             {/* Header - Grey on Grey Design */}
@@ -1922,7 +1979,19 @@ export default function DetailGeneratorApp() {
                                 <AdjustmentPanel
                                     data={generatedData}
                                     onUpdate={(newData: any) => {
-                                        setGeneratedData(newData);
+                                        // 🔒 Use functional update to prevent stale closure issues
+                                        // Properly merge imageUrls to prevent pose-generated images from being overwritten
+                                        setGeneratedData((prev: any) => {
+                                            const mergedImageUrls = {
+                                                ...prev.imageUrls,
+                                                ...(newData.imageUrls || {})
+                                            };
+                                            return {
+                                                ...prev,
+                                                ...newData,
+                                                imageUrls: mergedImageUrls
+                                            };
+                                        });
                                         // Sync sectionOrder if changed
                                         if (newData.sectionOrder && JSON.stringify(newData.sectionOrder) !== JSON.stringify(sectionOrder)) {
                                             setSectionOrder(newData.sectionOrder);
@@ -2162,6 +2231,7 @@ export default function DetailGeneratorApp() {
                     setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
                 }}
                 onDownload={handleDownloadSectionImage}
+                onCopy={handleCopySection}
             />
 
             {/* Number Input Dialog for Pose Generation */}
