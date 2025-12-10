@@ -198,72 +198,68 @@ export async function regenerateShoesOnly(
     const baseB64 = await urlToBase64(baseImageUrl);
     const shoeB64 = await urlToBase64(shoeImageUrl);
 
-    const prompt = `// === 🔒 MODEL WEARING SHOES - NATURAL INTEGRATION ===
-// TASK: Generate an image where the MODEL is ACTUALLY WEARING the provided shoes.
-// RESOLUTION_MODE: ${options?.resolution || '1K'}
-// OUTPUT FORMAT: Portrait (750x900)
+    const prompt = `🚨 MANDATORY REQUIREMENTS - READ FIRST 🚨
 
-**🎯 CORE MISSION: The model must appear to be PHYSICALLY WEARING the shoes**
-**This is NOT a paste/composite - the model is WEARING these shoes naturally**
+TASK: Generate a photo where the model is WEARING the uploaded shoes.
+⚠️ The model MUST be wearing the shoes from Image 2 - this is non-negotiable.
+⚠️ Analyze Image 1 (model photo) and match EVERYTHING to it.
 
-[👟👟👟 CRITICAL: SHOE WEARING REQUIREMENTS 👟👟👟]
-1. **FEET INSIDE SHOES**: The model's feet must be INSIDE the shoes - not floating nearby
-2. **NATURAL FIT**: Shoes must conform to the foot shape as if actually being worn
-3. **WEIGHT BEARING**: Shoes should show natural compression/creases from bearing the model's weight
-4. **LACES TIED**: If laces exist, they must appear naturally tied on the foot
-5. **GROUND CONTACT**: Shoe soles must be flat on the floor with realistic contact
-6. **NO FLOATING**: Shoes must NOT appear separate from or floating next to the feet
-7. **PERSPECTIVE MATCH**: Shoe angle must EXACTLY match the foot angle in BASE_IMAGE
+---
 
-[📷 FRAMING RULES - PRESERVE ORIGINAL]
-1. **NO CROPPING**: Maintain EXACT SAME framing/zoom as BASE_IMAGE
-2. **FULL BODY**: If BASE_IMAGE is full body, output MUST be full body
-3. **HEAD VISIBLE**: Model's head and face must remain fully visible
-4. **SAME POSE**: Keep the exact same body pose as the original
+STEP 1: ANALYZE MODEL PHOTO (Image 1)
+Before generating, study Image 1 carefully:
+- What is the COLOR TEMPERATURE? (warm/golden vs cool/blue)
+- What is the LIGHTING MOOD? (soft/harsh, direction)
+- What is the FILM LOOK? (vintage, modern, matte, contrasty)
+- What is the SATURATION level?
+- What is the CONTRAST level?
+- What is the overall AESTHETIC/VIBE?
 
-[🎨 COLOR GRADING - MATCH TO PHOTO]
-1. **ANALYZE BASE_IMAGE**: Study color temperature, saturation, contrast, brightness
-2. **APPLY TO SHOES**: Shoes MUST have IDENTICAL color grading as the rest of the image
-3. **WARM PHOTO = WARM SHOES**: If BASE_IMAGE is warm/golden, add warm undertones to shoes
-4. **COOL PHOTO = COOL SHOES**: If BASE_IMAGE is cool/blue, add cool undertones to shoes
-5. **SAME FILM LOOK**: Match any vintage/film processing from the original
-6. **NO COLOR MISMATCH**: Shoes should not stand out as differently processed
+STEP 2: APPLY SAME AESTHETIC TO SHOES
+The shoes from Image 2 must be rendered with:
+- SAME color temperature as Image 1
+- SAME lighting direction and quality
+- SAME film look/processing
+- SAME saturation and contrast levels
+- The shoes should look like they were in the ORIGINAL PHOTO
 
-[💡 LIGHTING & SHADOW INTEGRATION]
-1. **MATCH LIGHT DIRECTION**: Light on shoes must come from same direction as BASE_IMAGE
-2. **NATURAL SHADOWS**: Add shadows under shoes consistent with scene lighting
-3. **AMBIENT OCCLUSION**: Where foot meets shoe, add subtle contact shadows
-4. **SPECULAR HIGHLIGHTS**: Match highlight intensity and position with the scene
+STEP 3: NATURAL SHOE WEARING
+The model must PHYSICALLY WEAR the shoes:
+- Feet are INSIDE the shoes (not floating nearby)
+- Ankles connect naturally to shoe collars
+- Shoes conform to foot shape with natural creases
+- Weight distribution shows shoes are being worn
+- Laces/straps appear tied/fastened on feet
+- Shoes are flat on the floor with proper shadows
 
-[🚫 AVOID - THESE ARE FAILURES]
-❌ Shoes looking "pasted on" or "floating"
-❌ Shoes with different color grading than the photo
-❌ Missing or incorrect shadows
-❌ Awkward shoe angles not matching foot position
-❌ Visible compositing seams or edges
-❌ Shoes that look CGI or unrealistic
+WHAT TO KEEP FROM IMAGE 1:
+- Face and identity (pixel-perfect)
+- Hair style and color
+- Body pose and proportions
+- All clothing (shirt, pants, etc.)
+- Background and environment
+- Lighting direction
 
-[⚠️ STRICT NO HALLUCINATION RULES - CRITICAL]
-- DO NOT invent or imagine any part of the shoes that is NOT visible in PRODUCT_IMAGE.
-- DO NOT create outsole patterns, textures, or details that do not exist in the source.
-- If the outsole is not visible in PRODUCT_IMAGE, do NOT show it.
-- ONLY reproduce what you can actually SEE in PRODUCT_IMAGE.
-- Any imaginary creation of shoe parts = FAILURE.
+WHAT TO TAKE FROM IMAGE 2:
+- Shoe design, color, material, details
+- Model must WEAR these exact shoes
 
-[🔒 QUALITY PRESERVATION - CRITICAL]
-- Output image must have the EXACT SAME quality as BASE_IMAGE.
-- NO blur, NO haze, NO softening.
-- Match the sharpness, contrast, and clarity of BASE_IMAGE.
-- If BASE_IMAGE is high-res, output must be high-res.
+FRAMING:
+- Full body shot (head to toe)
+- Do not crop head or feet
+- Same camera angle as Image 1
 
-[INPUT IMAGES]
-- BASE_IMAGE (Image 1): Model wearing original shoes → KEEP everything EXCEPT shoes
-- PRODUCT_IMAGE (Image 2): New shoes → Model should be WEARING these on their feet
+QUALITY:
+- Photorealistic, 8K, ultra-sharp
+- Commercial photography style
+- No blur, no haze
 
-[NEGATIVE PROMPT]
-text, watermark, label, writing, signature, logo, typography, distorted text, bad anatomy, extra limbs, bad hands, missing fingers, cropped head, blurry, low quality, artifact, noise, grain, ugly, deformed
-
-OUTPUT: The same model in the same pose, naturally WEARING the new shoes.`;
+OUTPUT:
+A new photograph where:
+1. The model looks EXACTLY like Image 1
+2. But is naturally WEARING the shoes from Image 2
+3. The shoes match Image 1's color/tone/mood perfectly
+4. It looks like ONE cohesive professional photo`;
 
 
     // Map resolution to config if needed, or pass as metadata
@@ -310,73 +306,110 @@ export async function bringModelToStudio(
     }
 
     // Different prompt based on whether custom background is provided
+    // 커스텀 배경: 합성이 아닌 완전히 새로운 이미지 생성
     const prompt = hasCustomBg
-        ? `// --- PROTOCOL: CUSTOM_BACKGROUND_COMPOSITE ---
-// TARGET: Place model in the provided CUSTOM BACKGROUND with new shoes.
-// RESOLUTION_MODE: ${options?.resolution || '1K'}
-// 🔒 CRITICAL OUTPUT SIZE: MUST BE EXACTLY 750x900 PIXELS (Portrait)
-//
-// [BACKGROUND ANALYSIS]
-// 1. **ANALYZE IMAGE 3**: Study the lighting, atmosphere, perspective, and environment.
-// 2. **LIGHTING MATCHING**: Match model's lighting to the background's light source direction and color temperature.
-// 3. **PERSPECTIVE MATCHING**: Place model at natural scale and position within the scene.
-// 4. **SHADOW INTEGRATION**: Add realistic shadows that match the background's lighting.
-// 5. **SIZE OVERRIDE**: Regardless of background image size, OUTPUT MUST BE 750x900 pixels.
-//
-// [CRITICAL PIXEL RULES]
-// 1. **OUTPUT DIMENSIONS**: Final image MUST be 750 pixels wide × 900 pixels tall.
-// 2. **FACE PRESERVATION**: Face MUST be pixel-perfect identical to original model.
-// 3. **BODY PRESERVATION**: Keep EXACT body proportions and skin texture.
-// 4. **SHOE REPLACEMENT**: Wear the provided PRODUCT_IMAGES (Image 2).
-// 5. **NATURAL INTEGRATION**: Model must look like they were photographed in this environment.
-// 6. **FRAMING**: FULL BODY SHOT. DO NOT CROP THE HEAD.
-//
-// [AVOID]
-// - Unnatural lighting on model that doesn't match background
-// - Model looking pasted or floating
-// - Different perspective/scale that looks wrong
-// - Visible edges or compositing artifacts
-// - Wrong output dimensions (must be 750x900)
+        ? `🚨 MANDATORY REQUIREMENTS - READ FIRST 🚨
 
-ORIGINAL_MODEL_IMAGE: [First image]
-PRODUCT_IMAGES: [Second image]
-CUSTOM_BACKGROUND: [Third image - use for atmosphere only, output size is 750x900]`
-        : `// === PROTOCOL: STUDIO_MASTER_GENERATION ===
-// TARGET: Place model in a "Vintage Concrete Studio with Natural Sunlight" wearing new shoes.
-// RESOLUTION_MODE: ${options?.resolution || '1K'}
-// 🔒 OUTPUT FORMAT: 750x900 pixels (Portrait).
+TASK: Generate a photo of the model WEARING uploaded shoes in the custom background.
+⚠️ Model MUST be wearing shoes from Image 2 - non-negotiable.
+⚠️ Analyze Image 1 (model) and Image 3 (background) to create unified scene.
 
-// [🌅 BACKGROUND SPECIFICATION - VINTAGE CONCRETE WITH SUNLIGHT]
-// **WALL**: Weathered grey concrete wall with subtle texture, natural aging marks, and raw industrial aesthetic.
-// **FLOOR**: Smooth concrete floor matching the wall tone, slightly weathered.
-// **LIGHTING**: DIAGONAL NATURAL SUNLIGHT BEAMS coming from upper right window (like morning sun).
-// **SHADOWS**: Dramatic diagonal shadow lines on the wall/floor from window frames.
-// **ATMOSPHERE**: Minimalist industrial studio with warm natural light creating a vintage film look.
-// **COLOR TONE**: Slightly warm undertones from sunlight, muted grey concrete colors.
+---
 
-// [👟 NATURAL SHOE WEARING - CRITICAL]
-// The model must be ACTUALLY WEARING the shoes, NOT a composite.
-// 1. **FEET IN SHOES**: The model's feet must be INSIDE the shoes naturally.
-// 2. **NATURAL FIT**: Shoes must conform to foot shape (not hovering or pasted).
-// 3. **LACES TIED**: If shoes have laces, they must appear naturally tied on the feet.
-// 4. **WEIGHT BEARING**: Shoes must show natural compression/crease from bearing the model's weight.
-// 5. **GROUND CONTACT**: Soles must be flat on the floor with realistic shadow underneath.
-// 6. **NO FLOATING**: Shoes must NOT appear separate from the model's feet.
+STEP 1: ANALYZE INPUTS
+Image 1 (Model): Study face, body, clothing, pose
+Image 2 (Shoes): These are the shoes the model MUST wear
+Image 3 (Background): Study environment, lighting, mood, colors
 
-// [CRITICAL PIXEL RULES]
-// 1. **OUTPUT DIMENSIONS**: Final image MUST be 750 pixels wide × 900 pixels tall.
-// 2. **FACE PRESERVATION**: Face MUST be pixel-perfect identical.
-// 3. **BODY PRESERVATION**: Keep EXACT body proportions and skin texture.
-// 4. **SHOE WEARING**: Model naturally WEARING the PRODUCT_IMAGES shoes.
-// 5. **BACKGROUND**: Vintage concrete studio with diagonal sunlight EXACTLY as described.
-// 6. **FRAMING**: FULL BODY SHOT. DO NOT CROP THE HEAD.
-// 7. **QUALITY**: Commercial photography, 8k resolution, sharp focus, high fidelity.
+STEP 2: CREATE UNIFIED SCENE
+Generate a NEW photo where:
+- Model exists NATURALLY in the background environment
+- Lighting on model matches background lighting direction
+- Color temperature is consistent across entire image
+- Model casts appropriate shadows on the ground
 
-ORIGINAL_MODEL_IMAGE: [First image - keep face/body, model must WEAR new shoes]
-PRODUCT_IMAGES: [Second image - shoes to WEAR, not composite]
+STEP 3: NATURAL SHOE WEARING
+The model must PHYSICALLY WEAR the shoes:
+- Feet are INSIDE the shoes
+- Ankles connect naturally to shoe collars
+- Shoes conform to foot shape with natural creases
+- Shoes are flat on the ground with proper shadows
+- Shoe color/tone matches the scene's lighting
 
-[NEGATIVE PROMPT]
-text, watermark, label, writing, signature, logo, typography, distorted text, bad anatomy, extra limbs, bad hands, missing fingers, cropped head, blurry, low quality, artifact, noise, grain, ugly, deformed`;
+WHAT TO KEEP FROM IMAGE 1:
+- Face and identity (pixel-perfect)
+- Body pose and proportions
+- All clothing
+
+WHAT TO TAKE FROM IMAGE 2:
+- Shoe design, color, material
+- Model must WEAR these exact shoes
+
+WHAT TO TAKE FROM IMAGE 3:
+- Environment style and mood
+- Lighting direction and quality
+- Color temperature
+
+FRAMING:
+- Full body shot (head to toe)
+- Do not crop head or feet
+
+OUTPUT:
+A new photograph where model is naturally placed in the environment, wearing the shoes.
+Everything looks like ONE cohesive professional photo.`
+        : `🚨 MANDATORY REQUIREMENTS - READ FIRST 🚨
+
+TASK: Generate a photo of the model WEARING uploaded shoes in a vintage studio.
+⚠️ Model MUST be wearing shoes from Image 2 - non-negotiable.
+⚠️ Analyze Image 1 (model) to preserve identity perfectly.
+
+---
+
+STEP 1: ANALYZE MODEL PHOTO (Image 1)
+Study the model's:
+- Face and identity (must preserve exactly)
+- Body proportions and pose
+- Clothing style and colors
+
+STEP 2: CREATE STUDIO BACKGROUND
+Generate a vintage concrete studio with:
+- Weathered grey concrete wall with subtle texture
+- Smooth concrete floor matching wall tone
+- DIAGONAL NATURAL SUNLIGHT from upper right (morning sun)
+- Dramatic diagonal shadow lines on wall/floor
+- Slightly warm undertones from sunlight
+
+STEP 3: NATURAL SHOE WEARING
+The model must PHYSICALLY WEAR the shoes:
+- Feet are INSIDE the shoes
+- Ankles connect naturally to shoe collars
+- Shoes conform to foot shape with natural creases
+- Weight distribution shows shoes are being worn
+- Laces/straps appear tied/fastened on feet
+- Shoes are flat on floor with proper shadows
+- Shoe lighting matches the studio's diagonal sunlight
+
+WHAT TO KEEP FROM IMAGE 1:
+- Face and identity (pixel-perfect)
+- Body pose and proportions
+- All clothing
+
+WHAT TO TAKE FROM IMAGE 2:
+- Shoe design, color, material
+- Model must WEAR these exact shoes
+
+FRAMING:
+- Full body shot (head to toe)
+- Do not crop head or feet
+- Output: 750x900 pixels
+
+QUALITY:
+- Photorealistic, 8K, ultra-sharp
+- Commercial photography style
+- No blur, no haze
+
+OUTPUT:
+A professional studio photograph where model naturally wears the shoes.`;
 
     // Force strict output size: 750x900
     const config = {
@@ -460,45 +493,55 @@ async function forceResizeTo750x900(imageDataUrl: string): Promise<string> {
 export async function generateVerticalLegsCrop(baseImageUrl: string): Promise<string> {
     const baseB64 = await urlToBase64(baseImageUrl);
 
-    // 클로즈업 컷 - 허리 아래만
-    const prompt = `// --- TASK: CLOSEUP_POSE_MODIFICATION ---
-// ACTION: Create a lower-body closeup from the source image.
-// INPUT: Reference Image (Source)
+    // 클로즈업 컷 - 가까이서 촬영한 사진
+    const prompt = `🚨 MANDATORY OUTPUT REQUIREMENTS - READ FIRST 🚨
 
-// [FRAMING – WAIST-DOWN ONLY]
-// 1. This image is a CLOSEUP of the LOWER BODY only.
-// 2. Top of frame = waist / belt / hip line.
-// 3. Bottom of frame = shoes on the floor.
-// 4. NOTHING above the waist may appear in the frame.
-// 5. The head, face, neck, shoulders, and chest MUST NOT be visible at all.
+PHOTOGRAPHY TYPE: CLOSEUP SHOT (camera positioned CLOSE to subject)
+⚠️ NOT a cropped full body photo - this is SHOT as a closeup.
+⚠️ Camera is NEAR the lower body, naturally showing waist-to-feet.
 
-// [SHOT TYPE]
-// - Portrait orientation, 3:4 aspect ratio.
-// - Fill the frame with legs and shoes.
-// - This is NOT a full body shot. It is a lower-body product closeup.
+COLOR RULE: EXACT MATCH to source image.
+⚠️ NO filters. NO color grading. NO tone changes. NO desaturation.
+⚠️ If output colors differ from source = FAILURE.
 
-// [FOCUS & QUALITY]
-// - Camera focus MUST be on the shoes.
-// - Photorealistic, commercial photography.
-// - 8K resolution look, ultra sharp.
-// - No blur, no artistic haze, no low resolution, no distortion.
+---
 
-// [DETAIL PRESERVATION]
-// 1. Shoes must be identical to the source (design, color, material, texture).
-// 2. Trousers/pants must match the source in color, fabric, and fit.
-// 3. Lighting and floor/background texture should be consistent with the source lower body.
+TASK: Take a CLOSEUP PHOTOGRAPH of a model's lower body wearing shoes.
 
-// [POSE]
-// 1. Keep the same pose as the source image.
-// 2. Do NOT change the outfit or shoes.
-// 3. This is the same model and same clothing, seen only from waist down.
+CAMERA SETUP:
+- Camera is positioned CLOSE to the model (closeup photography)
+- Camera angle: Looking at the lower body from nearby
+- Framing naturally shows waist/hip down to feet
+- This is HOW fashion photographers shoot shoe details
 
-// [OUTPUT SUMMARY]
-// - Generate a new photorealistic commercial fashion photo.
-// - Waist-down only, legs and shoes in a 3:4 portrait frame.
-// - Identity, outfit, shoes, and scene are preserved from source.
+WHAT THIS IMAGE SHOWS:
+- Model's lower body from waist/hip down to feet
+- The model is WEARING shoes (feet are INSIDE the shoes)
+- Pants/trousers on the legs
+- Shoes on the floor with natural shadows
+- Shot from CLOSE distance (not far away then cropped)
 
-SOURCE_IMAGE: [Provided image]`;
+WHY THIS IS NOT A CROP:
+- This is photographed CLOSE, not cropped from full body
+- Camera is near the subject, naturally framing lower body
+- Like a photographer kneeling/bending to shoot shoe details
+- Natural depth of field from closeup photography
+
+PRESERVE FROM SOURCE:
+- Same model (skin tone, body type)
+- Same clothing (pants color, fabric)
+- Same shoes (exact design, color, material)
+- Same floor/background
+- Same lighting direction
+- SAME COLORS - NO FILTER!
+
+QUALITY:
+- Photorealistic, 8K, ultra-sharp
+- Focus on shoes and legs
+- No blur, no haze
+- Natural closeup photography look
+
+REFERENCE: [Source Image]`;
 
     const result = await callGeminiSecure(
         prompt,
@@ -520,22 +563,36 @@ export async function regenerateImageWithSpecificPose(
 ): Promise<ImageAsset> {
     const baseB64 = await urlToBase64(baseImageUrl);
 
+    // 포즈 변경 - 필터 효과 제거
     const prompt = `// --- TASK: POSE_MODIFICATION ---
 // CHANGE POSE TO: ${pose}
 // STRICT CONSTRAINT: FEET MUST BE FLAT ON GROUND. NO SOLES VISIBLE.
 // RESOLUTION_MODE: ${options?.resolution || '1K'}
 // OUTPUT: Portrait (3:4).
-//
+
+// [🔒 COLOR PRESERVATION - CRITICAL - NO FILTER]
+// 1. **EXACT COLOR MATCH**: Copy the EXACT colors from source image.
+// 2. **NO FILTERS**: Do NOT apply any color grading, filters, or tonal adjustments.
+// 3. **NO DESATURATION**: Maintain full color saturation as in source.
+// 4. **NO WARMING/COOLING**: Do not shift color temperature.
+// 5. **SAME BRIGHTNESS**: Match exact brightness and contrast levels.
+// 6. **SAME TEXTURE**: Preserve fabric and skin textures exactly as source.
+// 7. COLOR MISMATCH OR FILTER EFFECT = FAILURE
+
 // [CRITICAL FRAMING RULES]
 // 1. **FULL BODY**: Must be full-body shot. Head to toe.
 // 2. **NO CROPPING**: Do not cut off head or feet.
 // 3. **IDENTITY PRESERVATION**: Face and identity must remain exact.
-//
+
 // [RULES]
 // 1. **FACE & IDENTITY**: MUST MATCH SOURCE.
 // 2. **CLOTHING**: Keep upper body clothing identical.
 // 3. **SHOES**: Keep shoes identical.
 // 4. **BACKGROUND**: Keep background identical.
+
+// [OUTPUT]
+// Photorealistic full-body photo with modified pose.
+// COLORS MUST BE IDENTICAL TO SOURCE - NO FILTER EFFECTS!
 
 REFERENCE_IMAGE: [Provided image]`;
 
@@ -559,7 +616,7 @@ REFERENCE_IMAGE: [Provided image]`;
 }
 
 /**
- * 🔐 클로즈업 전용 포즈 변형 생성 - 신발 중심 레그샷
+ * 🔐 클로즈업 전용 포즈 변형 생성 - 가까이서 촬영
  */
 export async function regenerateCloseupWithVariation(
     baseImageUrl: string,
@@ -568,45 +625,55 @@ export async function regenerateCloseupWithVariation(
 ): Promise<ImageAsset> {
     const baseB64 = await urlToBase64(baseImageUrl);
 
-    // 클로즈업 컷 자세 변경 (허리 아래만)
-    const prompt = `// --- TASK: CLOSEUP_POSE_MODIFICATION ---
-// ACTION: Change the leg and foot pose to: "${pose}"
-// INPUT: Reference Image (Source)
+    // 클로즈업 컷 - 가까이서 촬영한 사진
+    const prompt = `🚨 MANDATORY OUTPUT REQUIREMENTS - READ FIRST 🚨
 
-// [FRAMING – WAIST-DOWN ONLY]
-// 1. This image is a CLOSEUP of the LOWER BODY only.
-// 2. Top of frame = waist / belt / hip line.
-// 3. Bottom of frame = shoes on the floor.
-// 4. NOTHING above the waist may appear in the frame.
-// 5. The head, face, neck, shoulders, and chest MUST NOT be visible at all.
+PHOTOGRAPHY TYPE: CLOSEUP SHOT (camera positioned CLOSE to subject)
+⚠️ NOT a cropped full body photo - this is SHOT as a closeup.
+⚠️ Camera is NEAR the lower body, naturally showing waist-to-feet.
 
-// [SHOT TYPE]
-// - Portrait orientation, 3:4 aspect ratio.
-// - Fill the frame with legs and shoes.
-// - This is NOT a full body shot. It is a lower-body product closeup.
+COLOR RULE: EXACT MATCH to source image.
+⚠️ NO filters. NO color grading. NO tone changes. NO desaturation.
+⚠️ If output colors differ from source = FAILURE.
 
-// [FOCUS & QUALITY]
-// - Camera focus MUST be on the shoes.
-// - Photorealistic, commercial photography.
-// - 8K resolution look, ultra sharp.
-// - No blur, no artistic haze, no low resolution, no distortion.
+---
 
-// [DETAIL PRESERVATION]
-// 1. Shoes must be identical to the source (design, color, material, texture).
-// 2. Trousers/pants must match the source in color, fabric, and fit.
-// 3. Lighting and floor/background texture should be consistent with the source lower body.
+TASK: Take a CLOSEUP PHOTOGRAPH of a model's lower body wearing shoes.
+POSE: Change legs/feet pose to "${pose}"
 
-// [POSE]
-// 1. Only change the pose of the legs and feet to match "${pose}".
-// 2. Do NOT change the outfit or shoes.
-// 3. This is the same model and same clothing, seen only from waist down.
+CAMERA SETUP:
+- Camera is positioned CLOSE to the model (closeup photography)
+- Camera angle: Looking at the lower body from nearby
+- Framing naturally shows waist/hip down to feet
+- This is HOW fashion photographers shoot shoe details
 
-// [OUTPUT SUMMARY]
-// - Generate a new photorealistic commercial fashion photo.
-// - Waist-down only, legs and shoes in a 3:4 portrait frame.
-// - Pose is changed to "${pose}", but identity, outfit, shoes, and scene are preserved.
+WHAT THIS IMAGE SHOWS:
+- Model's lower body from waist/hip down to feet
+- The model is WEARING shoes (feet are INSIDE the shoes)
+- Pants/trousers on the legs
+- Shoes on the floor with natural shadows
+- Shot from CLOSE distance (not far away then cropped)
 
-SOURCE_IMAGE: [Provided image]`;
+WHY THIS IS NOT A CROP:
+- This is photographed CLOSE, not cropped from full body
+- Camera is near the subject, naturally framing lower body
+- Like a photographer kneeling/bending to shoot shoe details
+
+PRESERVE FROM SOURCE:
+- Same model (skin tone, body type)
+- Same clothing (pants color, fabric)
+- Same shoes (exact design, color, material)
+- Same floor/background
+- Same lighting direction
+- SAME COLORS - NO FILTER!
+
+QUALITY:
+- Photorealistic, 8K, ultra-sharp
+- Focus on shoes and legs
+- No blur, no haze
+- Natural closeup photography look
+
+REFERENCE: [Source Image]`;
 
     const config = {
         imageSize: '1K',
@@ -791,7 +858,21 @@ export async function generateBeautifiedShoe(shoeBase64: string, poseId: PoseVar
             poseInstruction = `**VIEW:** Commercial Side Profile. ONE SINGLE SHOE. INSOLE NOT VISIBLE.`;
     }
 
-    const prompt = `// TASK: PREMIUM SHOE STUDIO SHOT - UNIQUE ANGLE GENERATION
+    const prompt = `🚨 MANDATORY OUTPUT REQUIREMENTS - READ FIRST 🚨
+
+BACKGROUND: PURE WHITE (#FFFFFF) - ABSOLUTELY NO EXCEPTIONS
+⚠️ NOT off-white, NOT cream, NOT gray. PURE WHITE ONLY.
+
+NO DOTS OR MARKS: Remove ALL black dots, dark spots, or marks ANYWHERE in the image.
+⚠️ ESPECIALLY check top-left corner, top-right corner, and all edges.
+⚠️ Black/dark dots in corners = ABSOLUTE FAILURE.
+
+NO TEXT: Do NOT add ANY text, letters, numbers, watermarks, or written content.
+⚠️ Text in output = ABSOLUTE FAILURE.
+
+---
+
+// TASK: PREMIUM SHOE STUDIO SHOT - UNIQUE ANGLE GENERATION
 // ⚠️ EACH VIEW MUST BE COMPLETELY DIFFERENT FROM OTHER VIEWS ⚠️
 
 ${poseInstruction}
@@ -800,6 +881,12 @@ ${poseInstruction}
 - PURE WHITE BACKGROUND (#FFFFFF) - NO exceptions
 - NO GRAY, NO OFF-WHITE - must be pure white
 - Seamless infinite white studio background
+- NO BLACK DOTS or dark spots anywhere, especially in corners
+
+**[NO TEXT RULE - CRITICAL]**
+- Do NOT add ANY text, letters, numbers, or labels
+- Do NOT add watermarks or signatures
+- ONLY the shoe, nothing else
 
 **[SHADOW]** 
 - Realistic contact shadow beneath shoe
@@ -815,7 +902,10 @@ ${poseInstruction}
 **[IDENTITY LOCK - CRITICAL]**
 - Every detail of the shoe = IDENTICAL to input
 - Do NOT redesign, modify, or reimagine the shoe
-- Clone the exact shoe, only change the viewing angle`;
+- Clone the exact shoe, only change the viewing angle
+
+**[NEGATIVE - DO NOT INCLUDE]**
+black dot, dark spot, black mark, dark mark, corner dot, corner artifact, top-left dot, top-right dot, edge artifact, text, letters, numbers, words, watermark, label, writing, typography, gray background, off-white background`;
 
     try {
         const result = await callGeminiSecure(

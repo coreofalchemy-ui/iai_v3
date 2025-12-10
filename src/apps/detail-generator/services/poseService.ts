@@ -141,45 +141,10 @@ export async function generatePoseVariation(
     if (type === 'closeup') {
         console.log(`🦵 Generating closeup with pose: ${pose.description}`);
 
-        // 클로즈업 컷 자세 변경 (허리 아래만)
-        const closeupPrompt = `// --- TASK: CLOSEUP_POSE_MODIFICATION ---
-// ACTION: Change the leg and foot pose to: "${pose.description}"
-// INPUT: Reference Image (Source)
+        // 클로즈업 컷 - 복사 명령
+        const closeupPrompt = `Copy this photo exactly. Only change the leg/feet pose to: "${pose.description}"
 
-// [FRAMING – WAIST-DOWN ONLY]
-// 1. This image is a CLOSEUP of the LOWER BODY only.
-// 2. Top of frame = waist / belt / hip line.
-// 3. Bottom of frame = shoes on the floor.
-// 4. NOTHING above the waist may appear in the frame.
-// 5. The head, face, neck, shoulders, and chest MUST NOT be visible at all.
-
-// [SHOT TYPE]
-// - Portrait orientation, 3:4 aspect ratio.
-// - Fill the frame with legs and shoes.
-// - This is NOT a full body shot. It is a lower-body product closeup.
-
-// [FOCUS & QUALITY]
-// - Camera focus MUST be on the shoes.
-// - Photorealistic, commercial photography.
-// - 8K resolution look, ultra sharp.
-// - No blur, no artistic haze, no low resolution, no distortion.
-
-// [DETAIL PRESERVATION]
-// 1. Shoes must be identical to the source (design, color, material, texture).
-// 2. Trousers/pants must match the source in color, fabric, and fit.
-// 3. Lighting and floor/background texture should be consistent with the source lower body.
-
-// [POSE]
-// 1. Only change the pose of the legs and feet to match "${pose.description}".
-// 2. Do NOT change the outfit or shoes.
-// 3. This is the same model and same clothing, seen only from waist down.
-
-// [OUTPUT SUMMARY]
-// - Generate a new photorealistic commercial fashion photo.
-// - Waist-down only, legs and shoes in a 3:4 portrait frame.
-// - Pose is changed to "${pose.description}", but identity, outfit, shoes, and scene are preserved.
-
-SOURCE_IMAGE: [Provided image]`;
+Same person. Same clothes. Same shoes. Same colors. Same everything.`;
 
         const result = await callGeminiSecure(
             closeupPrompt,
@@ -198,49 +163,14 @@ SOURCE_IMAGE: [Provided image]`;
         };
     }
 
-    // 풀바디는 자세만 변경, 나머지 동일
+    // 전신은 자세만 변경
+    // 풀바디는 자세만 변경, 나머지 동일
 
-    // 모델 컷 자세 변경 (전신 유지)
-    const fullBodyPrompt = `// --- TASK: FULL_BODY_POSE_MODIFICATION ---
-// ACTION: Change the pose of the model to: "${pose.description}"
-// INPUT: Reference Image (Source)
+    // 모델 컷 자세
+    // 전신은 자세만 변경
+    const fullBodyPrompt = `Copy this photo exactly. Only change the full body pose to: "${pose.description}"
 
-// [CRITICAL RULES]
-// 1. **FRAMING**: FULL BODY SHOT (Head to Toe). DO NOT CROP HEAD.
-// 2. **IDENTITY LOCK**: Face, Hair, and Skin Tone must be PIXEL-PERFECT match to source.
-// 3. **APPAREL LOCK**: Upper body clothing and SHOES must remain IDENTICAL.
-// 4. **BACKGROUND**: Keep the background IDENTICAL to source.
-
-// [QUALITY - CRITICAL]
-// - Photorealistic, Commercial Photography style
-// - 8K Resolution, Ultra-Sharp Focus
-// - Commercial Catalog Style quality
-// - NO BLUR, NO artistic haze, NO low resolution
-
-// [COLOR PRESERVATION]
-// - COPY exact colors from source - no filter, no color grading
-// - If source has warm tones, output has warm tones
-// - If source has film grain, output has film grain
-// - Color mismatch = FAILURE
-
-// [INSTRUCTION]
-// Keep everything IDENTICAL except the pose.
-// Only move the limbs to match the requested pose.
-// Ensure the shoes are in sharp focus.
-// ${gender === 'FEMALE' ? 'Model is FEMALE.' : 'Model is MALE.'}
-
-// [NEGATIVE CONSTRAINTS]
-// - No blur
-// - No artistic haze
-// - No low resolution
-// - No distortion
-// - No color changes
-
-// [OUTPUT]
-// Photorealistic full-body photo with modified pose.
-// Sharp 8K quality, identical identity/clothes/colors to source.
-
-SOURCE_IMAGE: [Provided image]`;
+Same person. Same clothes. Same shoes. Same colors. Same everything.`;
 
     const result = await callGeminiSecure(
         fullBodyPrompt,

@@ -88,7 +88,21 @@ const getPromptForEffect = (effect: ProductEffect, poseId?: string, referenceCou
 `;
 
     if (effect === 'beautify') {
-        return `${SYSTEM_ROLE}
+        return `🚨 MANDATORY OUTPUT REQUIREMENTS - READ FIRST 🚨
+
+BACKGROUND: PURE WHITE (#FFFFFF) - ABSOLUTELY NO EXCEPTIONS
+⚠️ NOT off-white, NOT cream, NOT gray. PURE WHITE ONLY.
+
+NO DOTS OR MARKS: Remove ALL black dots, dark spots, or marks ANYWHERE in the image.
+⚠️ ESPECIALLY check top-left corner, top-right corner, and all edges.
+⚠️ Black/dark dots in corners = ABSOLUTE FAILURE.
+
+NO TEXT: Do NOT add ANY text, letters, numbers, watermarks, logos, or written content.
+⚠️ Text in output = ABSOLUTE FAILURE.
+
+---
+
+${SYSTEM_ROLE}
 **[TASK: COMMERCE CATALOG IMAGE - PERFECT ISOLATION (NU-KKI STYLE)]**
 
 **[SYSTEM ROLE OVERRIDE]**
@@ -103,42 +117,43 @@ This is NOT artistic photography. This is TECHNICAL PRODUCT ISOLATION for online
 - **Effect**: "Floating Isolation" (Nu-kki style) - The shoe floats in a pure white void.
 - **Edges**: RAZOR-SHARP cutout edges. NO halo. NO fringe. NO soft edges. NO gray pixels.
 
-**2. ARTIFACTS & MARKS (ABSOLUTE REMOVAL)**
-- **Dots/Marks**: Remove ANY dots, marks, specks, or artifacts.
-- **Watermarks**: Remove any text, logos, or watermarks that are NOT part of the shoe itself.
-- **Dust**: Remove all dust particles, dirt, and imperfections on the background.
-- **Left corner marks**: ESPECIALLY remove any marks or dots in corners or edges.
+**2. NO BLACK DOTS OR DARK SPOTS - CRITICAL**
+- **ABSOLUTE REMOVAL**: Remove ALL black dots, dark spots, or marks from the image.
+- **CHECK ALL CORNERS**: Especially top-left, top-right, bottom-left, bottom-right corners.
+- **CHECK ALL EDGES**: Inspect top edge, bottom edge, left edge, right edge.
+- **PURE WHITE ONLY**: The background must be completely clean pure white with NO dots or artifacts.
 
-**3. SUBJECT ISOLATION (STRICT RULE)**
+**3. NO TEXT OR LETTERS - CRITICAL**
+- **ABSOLUTE PROHIBITION**: Do NOT add ANY text, letters, numbers, or written content.
+- **NO watermarks, NO labels, NO logos (except product's own logo)**
+- **NO text of any language (Korean, English, or any other)**
+- If input has text overlays, REMOVE them.
+
+**4. ARTIFACTS & MARKS (ABSOLUTE REMOVAL)**
+- **Dots/Marks**: Remove ANY dots, marks, specks, or artifacts.
+- **Dust**: Remove all dust particles, dirt, and imperfections on the background.
+
+**5. SUBJECT ISOLATION (STRICT RULE)**
 - **What to KEEP**: ONLY THE SHOE/PRODUCT. Keep the shoe's original logo, stitching, texture.
 - **What to REMOVE**: Remove model legs, hands, mannequins, plastic stands, tags, strings, or ANY non-product elements.
 - **Result**: ONLY the product should remain, perfectly isolated.
 
-**4. LIGHTING (COMMERCIAL CATALOG STYLE)**
+**6. LIGHTING (COMMERCIAL CATALOG STYLE)**
 - **Type**: "Butterfly Lighting" or "Flat Even Lighting"
 - **Direction**: Soft, even, frontal fill light
 - **Shadows on Product**: Minimal to none. Flat commercial lighting to show product clearly.
-- **Purpose**: Show the product details clearly, NOT create drama.
 
-**5. QUALITY & RETOUCHING**
+**6. QUALITY & RETOUCHING**
 - **Surface**: Retouch to remove dust, scuffs, glue marks
 - **Texture**: Preserve leather grain, mesh weave, fabric texture PERFECTLY
 - **Color**: Keep original color accurate (do not over-saturate or desaturate)
-- **Details**: Preserve ALL original details: stitching count, eyelet positions, tread patterns
 
-**6. VIEW & ANGLE**
+**7. VIEW & ANGLE**
 - **Maintain**: Keep the EXACT SAME camera angle and perspective as input
 - **Do NOT**: Rotate, tilt, or change the viewing angle
-- **Framing**: Standard commercial product angle (typically 3/4 view or side profile)
-
-**[OUTPUT REQUIREMENTS]**
-- Format: High-resolution PNG with alpha transparency OR pure white background
-- Quality: Commercial catalog quality
-- Style: Clean, professional, e-commerce ready
-- Result: Perfect product cutout that looks like it was professionally photographed in a studio with perfect lighting
 
 **[NEGATIVE PROMPT - ABSOLUTE PROHIBITIONS]**
-shadow, cast shadow, contact shadow, drop shadow, floor shadow, reflection, ambient occlusion, dark background, gray background, off-white background, beige background, cream background, soft edges, halo, fringe, blur, noise, grain, artifacts, dots, marks, specks, dust particles, corner marks, watermark, text overlay, signature, model legs, model hands, mannequin parts, plastic stand, tags, strings, distorted shape, wrong angle, rotated view, modified details, inconsistent texture, wrong color, over-saturation, desaturation, dramatic lighting, dark shadows on product
+black dot, dark spot, black mark, dark mark, corner dot, corner artifact, top-left dot, top-right dot, edge artifact, text, letters, numbers, watermark, label, writing, typography, shadow, cast shadow, contact shadow, drop shadow, floor shadow, reflection, ambient occlusion, dark background, gray background, off-white background, beige background, cream background, soft edges, halo, fringe, blur, noise, grain, artifacts, dots, marks, specks, dust particles, corner marks, signature, model legs, model hands, mannequin parts, plastic stand, tags, strings
 `;
     }
 
