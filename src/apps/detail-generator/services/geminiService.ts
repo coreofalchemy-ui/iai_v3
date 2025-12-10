@@ -66,77 +66,200 @@ const raceMapping: Record<string, string> = {
 
 /**
  * 🔐 얼굴 배치 생성 (보안 버전)
+ * 홀드된 모델 이미지에서 얼굴/헤어만 완전히 다르게 변경합니다.
+ * 반드시 실사(Photo-realistic)로 출력됩니다.
  */
 export const generateFaceBatch = async (
     gender: 'male' | 'female',
     race: string,
     age: string,
-    referenceFaces: string[] = [],
-    count: number = 5
+    baseModelUrl: string, // 홀드된 모델 이미지
+    count: number = 5,
+    referenceFaces: string[] = [] // 참고 얼굴 (선택적)
 ): Promise<string[]> => {
-    const genderTerm = gender === 'male' ? 'male' : 'female';
+    // Extract base64 from the held model image
+    const baseModelB64 = baseModelUrl.includes('base64,')
+        ? baseModelUrl.split('base64,')[1]
+        : await urlToBase64Client(baseModelUrl);
 
-    // 인종별 특화 프롬프트
-    const getVibeByRace = (race: string, gender: 'male' | 'female') => {
-        if (race === '한국인') {
-            return gender === 'female'
-                ? "Absolutely stunning top-tier K-POP idol center visual like BLACKPINK Jennie, IVE Jang Wonyoung, Aespa Karina. Perfect sharp V-line jawline, cat-eyes with natural double eyelids, flawless glass skin, small face ratio"
-                : "Extremely handsome K-POP idol center visual like BTS V, EXO Cha Eunwoo, Stray Kids Hyunjin. Sharp masculine jawline, intense charismatic gaze, perfect proportions";
-        } else if (race === '일본인') {
-            return gender === 'female'
-                ? "Top Japanese actress beauty like Satomi Ishihara, Suzu Hirose. Soft elegant features, natural beauty, refined and gentle facial structure, clear porcelain skin"
-                : "Handsome Japanese actor like Masaki Suda, Takeru Satoh. Clean refined features, natural charisma, masculine but gentle look";
-        } else { // 서양인
-            return gender === 'female'
-                ? "Hollywood A-list actress beauty like Margot Robbie, Gal Gadot. Sharp defined features, striking symmetrical face, elegant bone structure, luminous skin"
-                : "Hollywood leading man like Chris Hemsworth, Timothée Chalamet. Chiseled jawline, striking eyes, perfect facial proportions, refined masculine beauty";
-        }
-    };
+    const genderKorean = gender === 'female' ? '여성' : '남성';
+    const genderTerm = gender === 'female' ? 'woman' : 'man';
 
-    const vibeKeywords = getVibeByRace(race, gender);
-    const hairStyles = gender === 'female' ? hairStylesFemale : hairStylesMale;
+    // 각각 완전히 다른 사람을 위한 unique 시드
+    const uniqueSeeds = [
+        `Person-Alpha-${Date.now()}-${Math.random()}`,
+        `Person-Beta-${Date.now()}-${Math.random()}`,
+        `Person-Gamma-${Date.now()}-${Math.random()}`,
+        `Person-Delta-${Date.now()}-${Math.random()}`,
+        `Person-Epsilon-${Date.now()}-${Math.random()}`,
+        `Person-Zeta-${Date.now()}-${Math.random()}`
+    ];
+
+    // 다양한 외모 특성 (각각 완전히 다른 사람)
+    const appearances = [
+        { faceShape: "round face", eyes: "big round eyes", nose: "small cute nose", hair: "long straight black hair", expression: "gentle smile" },
+        { faceShape: "oval face", eyes: "sharp cat-like eyes", nose: "high nose bridge", hair: "short wavy brown hair", expression: "confident look" },
+        { faceShape: "heart-shaped face", eyes: "almond-shaped eyes", nose: "button nose", hair: "medium auburn hair with bangs", expression: "bright smile" },
+        { faceShape: "square jaw", eyes: "monolid eyes", nose: "straight nose", hair: "shoulder-length dark hair", expression: "serious gaze" },
+        { faceShape: "diamond face", eyes: "double eyelid large eyes", nose: "refined nose", hair: "long wavy blonde hair", expression: "soft expression" },
+        { faceShape: "V-line face", eyes: "deer-like innocent eyes", nose: "petite nose", hair: "bob cut with highlights", expression: "playful smile" }
+    ];
 
     const promises = Array(count).fill(null).map(async (_, idx) => {
         try {
-            const hairStyle = hairStyles[idx % hairStyles.length];
-            const bg = studioBackgrounds[idx % studioBackgrounds.length];
+            const appearance = appearances[idx % appearances.length];
+            const uniqueId = uniqueSeeds[idx % uniqueSeeds.length];
 
-            let prompt = `
-[SUBJECT] Close-up portrait of a ${age}-year-old ${race} ${genderTerm}.
-[BEAUTY STANDARD] ${vibeKeywords}
-[COMPOSITION] Face MUST be perfectly CENTERED in the frame. Eyes at center of image.
-[QUALITY] Professional studio photography. Sharp focus, perfect lighting. Standard resolution.
-[HAIR] ${hairStyle}
-[BACKGROUND] ${bg}
-[STYLE] High-end beauty editorial, fashion magazine cover worthy.
-[CRITICAL] Extremely beautiful/handsome face only. Sharp facial lines, perfect symmetry.
-[FRAMING] Face fills 70-80% of frame. NO cropping of forehead or chin. Full face visible.
-[AVOID] Off-center, crooked, tilted, cropped faces. Ugly, distorted, asymmetric.
+            // 참고 얼굴이 있으면 사용
+            const hasReference = referenceFaces.length > 0;
+            const refFace = hasReference ? referenceFaces[idx % referenceFaces.length] : null;
+            const refFaceB64 = refFace
+                ? (refFace.includes('base64,') ? refFace.split('base64,')[1] : refFace)
+                : null;
+
+            let prompt: string;
+            let images: GeminiImagePart[];
+
+            if (hasReference && refFaceB64) {
+                prompt = `
+[PHOTO EDITING TASK - REFERENCE BASED]
+Edit this fashion photograph. Replace ONLY the model's face and hair with someone who resembles the reference.
+
+REFERENCE IDENTITY (Image 1): Use this face as the identity reference.
+ORIGINAL PHOTO (Image 2): Edit this photo - keep everything except face/hair.
+
+OUTPUT REQUIREMENTS:
+- The result MUST be a REAL PHOTOGRAPH, not illustration or CGI
+- Face should closely resemble the reference image
+- Hair: ${appearance.hair}
+- Age: ${age} years old
+- Ethnicity: ${race}
+- KEEP: exact same outfit, pose, body, background, lighting, shadows
+- MAINTAIN: original photo quality and style (NOT cartoon, NOT 3D render)
+
+CRITICAL: Output must be indistinguishable from a real fashion photograph.
 `;
+                images = [
+                    { data: refFaceB64, mimeType: 'image/png' },
+                    { data: baseModelB64, mimeType: 'image/png' }
+                ];
+            } else {
+                prompt = `
+[MANDATORY FACE REPLACEMENT TASK]
 
-            const images: GeminiImagePart[] = [];
-            if (referenceFaces.length > 0) {
-                const refFace = referenceFaces[idx % referenceFaces.length];
-                images.push(extractBase64(refFace));
-                prompt += `\n[CRITICAL: IDENTITY PRESERVATION] The output face MUST look exactly like the provided reference.`;
+⚠️ CRITICAL WARNING: The original model's face CANNOT appear in the output. 
+You MUST replace the face with a COMPLETELY DIFFERENT person.
+
+UNIQUE PERSON ID: ${uniqueId}
+Each generated image must show a DIFFERENT unique individual.
+
+MANDATORY NEW FACE SPECIFICATIONS:
+- Face shape: ${appearance.faceShape}
+- Eyes: ${appearance.eyes}  
+- Nose: ${appearance.nose}
+- Hair color and style: ${appearance.hair}
+- Expression: ${appearance.expression}
+- Gender: ${genderTerm}
+- Age: EXACTLY ${age} years old (reflect this in the face)
+- Ethnicity: ${race} (facial features must match this ethnicity)
+
+ABSOLUTE REQUIREMENTS:
+1. The face MUST be a DIFFERENT person - NOT the original model
+2. The new face MUST match the specifications above
+3. Output MUST be a REAL PHOTOGRAPH (not cartoon/CGI/illustration)
+4. Skin must have natural texture with pores and realistic lighting
+5. The new face must blend naturally with the original photo's lighting
+
+PRESERVE EXACTLY:
+- All clothing and outfit
+- Body pose and position
+- Background
+- Lighting direction and shadows
+- Image dimensions and quality
+
+⛔ FORBIDDEN:
+- Keeping the original model's face
+- Cartoon/anime/doll-like appearance
+- Artificial or plastic-looking skin
+- CGI or 3D rendered look
+
+OUTPUT: A real fashion photograph with a COMPLETELY NEW ${race} ${genderTerm} aged ${age}.
+`;
+                images = [{ data: baseModelB64, mimeType: 'image/png' }];
             }
 
-            // 해상도 낮춤: 1K -> 표준
-            const result = await callGeminiSecure(prompt, images, { aspectRatio: '1:1' });
+            const result = await callGeminiSecure(prompt, images, { temperature: 0.75 });
 
             if (result.type === 'image') {
                 return result.data;
             }
             return null;
         } catch (e) {
-            console.error(`Face #${idx} failed:`, e);
+            console.error(`Model variation #${idx} failed:`, e);
             return null;
         }
     });
 
     const results = await Promise.all(promises);
-    const validResults = results.filter((img): img is string => img !== null);
-    return validResults;
+    return results.filter((img): img is string => img !== null);
+};
+
+
+/**
+ * 🔐 옷 입히기 (Apply Outfit to Model)
+ * 선택된 전신 모델(Base)에 홀드된 이미지(Outfit)를 입힘
+ */
+export const applyOutfitToModel = async (
+    baseModelBase64: string,      // 선택된 전신 모델 (흰티+청바지)
+    outfitRefBase64: string,      // 옷/신발 레퍼런스 (홀드된 이미지)
+    gender: 'm' | 'w'
+): Promise<string> => {
+    const baseB64 = baseModelBase64.includes('base64,') ? baseModelBase64.split('base64,')[1] : baseModelBase64;
+    const outfitB64 = outfitRefBase64.includes('base64,') ? outfitRefBase64.split('base64,')[1] : outfitRefBase64;
+
+    const prompt = `
+**[TASK: FASHION TRY-ON / OUTFIT TRANSFER]**
+
+You have TWO images:
+1. **BASE MODEL** (The person wearing white t-shirt & jeans)
+2. **OUTFIT REFERENCE** (The clothes and shoes to transfer)
+
+---
+
+**[INSTRUCTION]**
+
+Dress the **BASE MODEL** in the **OUTFIT REFERENCE**.
+
+**[RULES]**
+1. **KEEP THE PERSON**: The final image MUST show the EXACT same person from the BASE MODEL image.
+   - Same face, same hair, same body proportions (9-head tall).
+   - Same pose (unless outfit requires slight adjustment).
+   
+2. **CHANGE THE OUTFIT**: Replace the white t-shirt and jeans with the outfit from the REFERENCE image.
+   - Copy the Top (shirt/jacket/etc.) matches REFERENCE.
+   - Copy the Bottom (pants/skirt/etc.) matches REFERENCE.
+   - **CRITICAL**: Copy the **SHOES** exactly from the REFERENCE.
+   
+3. **BACKGROUND**: 
+   - Use a background that matches the vibe of the OUTFIT REFERENCE.
+   - Or keep it clean/studio if the reference is clean.
+
+**[OUTPUT]**
+- High Quality Fashion Photo (1K)
+- Full Body Shot
+- The BASE MODEL wearing the REFERENCE OUTFIT.
+`;
+
+    const result = await callGeminiSecure(prompt, [
+        { data: baseB64, mimeType: 'image/png' },
+        { data: outfitB64, mimeType: 'image/png' }
+    ], {
+        temperature: 0.4, // 일관성 유지
+        aspectRatio: '9:16'
+    });
+
+    if (result.type !== 'image') throw new Error('Outfit application failed');
+    return result.data;
 };
 
 /**
@@ -373,7 +496,8 @@ export const batchFaceReplacement = async (
 export const generateBaseModelFromFace = async (
     sourceFaceBase64: string,
     referenceImageBase64: string,
-    gender: 'm' | 'w'
+    gender: 'm' | 'w',
+    strength: 'safe' | 'creative' = 'safe'
 ): Promise<string> => {
     const faceB64 = sourceFaceBase64.includes('base64,')
         ? sourceFaceBase64.split('base64,')[1]
@@ -382,65 +506,65 @@ export const generateBaseModelFromFace = async (
         ? referenceImageBase64.split('base64,')[1]
         : referenceImageBase64;
 
+    const noiseLevel = strength === 'safe' ? 0.35 : 0.55;
+
+    // 4-1) 공통 Face Identity Lock 블록
+    const FACE_IDENTITY_LOCK_BLOCK = `
+[FACE IDENTITY LOCK]
+Use the face identity from the reference face image (IMAGE 1).
+Keep the same facial structure, eyes, nose, mouth, and jawline.
+Do not change the age, gender, or ethnicity.
+Do not change the head angle or head position unless necessary for blending.
+Blend the neck, jawline, and hair naturally into the original body.
+No mask effect, no sticker-like edges, no harsh cut around the face.
+    `;
+
+    // 4-3) 네거티브 프롬프트
+    const negativePrompt = `
+No extra faces, no duplicated head.
+No mask, no helmet, no sunglasses, no face covering.
+No cartoon, no illustration, no anime.
+No body distortion, no extra limbs, no broken fingers.
+No text, no watermark, no logo.
+No heavy beauty filter, no plastic skin.
+No Big Head, No Chibi, No distorted proportions.
+    `;
+
     const prompt = `
-**[작업: 원본 사진에서 얼굴만 교체]**
+**[TASK: MODEL FACE REPAINT]**
 
-두 이미지가 주어집니다:
-- **[얼굴 사진]**: 새로 적용할 얼굴
-- **[원본 사진]**: 기준이 되는 사진 (이 사진을 그대로 복제)
+You have two inputs:
+- **IMAGE 1**: The Reference Face Identity (Target).
+- **IMAGE 2**: The Base Model Photo (Scene, Body, Outfit).
 
----
+**[INSTRUCTION]**
+Repaint the face of the model in IMAGE 2 using the identity from IMAGE 1, while strictly preserving the original scene.
 
-**[핵심 명령]**
+[SCENE]
+Keep the original pose, body shape, outfit, lighting, and background
+exactly the same as the base image (IMAGE 2).
+Match the lighting direction and color tone of IMAGE 2.
 
-[원본 사진]을 **그대로 복제**하되, 얼굴만 [얼굴 사진]의 사람으로 바꿔라.
+[FACE]
+Replace only the face with the reference face identity (IMAGE 1).
+Do not change the hairstyle direction too much.
+Maintain realistic skin texture and pores.
 
----
+${FACE_IDENTITY_LOCK_BLOCK}
 
-**[절대적으로 유지해야 할 것 - 원본 사진 기준]**
+[FRAMING]
+Keep the same camera angle and framing as the base image.
+Do not crop the head or feet.
 
-1. **출력 크기**: 원본 사진과 **동일한 해상도와 크기**로 출력
-2. **피사체 크기**: 원본 사진에서 사람이 차지하는 비율 그대로 유지
-3. **구도**: 원본 사진의 카메라 앵글, 프레임 그대로
-4. **배경**: 원본 사진의 배경 그대로 (변경 금지)
-5. **착장**: 원본 사진의 옷, 신발, 액세서리 그대로
-6. **자세**: 원본 사진의 포즈 그대로
+[NEGATIVE RULES]
+${negativePrompt}
+    `;
 
----
-
-**[변경할 것]**
-
-- **얼굴**: [얼굴 사진]의 얼굴로 교체 (눈, 코, 입, 턱선, 광대뼈)
-- **헤어스타일**: [얼굴 사진]의 헤어스타일로 교체
-- **피부톤**: [얼굴 사진]의 피부톤으로 맞춤
-
----
-
-**[출력 품질]**
-
-- **해상도**: 원본 사진과 동일하거나 더 높게
-- **선명도**: Ultra sharp, 8K quality
-- **화질 저하 금지**: 블러, 노이즈, 화질 저하 없이 선명하게
-
----
-
-**[실패 조건]**
-
-- 출력 이미지가 원본 사진보다 작으면 실패
-- 피사체가 원본 사진보다 작아지면 실패
-- 배경이 바뀌면 실패
-- 얼굴이 [얼굴 사진]과 다르면 실패
-- 화질이 저하되면 실패
-
-**[출력]**: 원본 사진과 동일한 크기, 동일한 구도의 고화질 패션 사진
-`;
-
-    // aspectRatio를 지정하지 않아서 원본 이미지 크기를 따라가게 함
     const result = await callGeminiSecure(prompt, [
-        { data: faceB64, mimeType: 'image/png' },   // IMAGE 1: 새 얼굴
-        { data: refB64, mimeType: 'image/png' }     // IMAGE 2: 원본 (크기/구도/배경 기준)
+        { data: faceB64, mimeType: 'image/png' },   // IMAGE 1: 타겟 얼굴
+        { data: refB64, mimeType: 'image/png' }     // IMAGE 2: 원본 바디/착장
     ], {
-        temperature: 0.3,  // 더 일관성 있게
+        temperature: noiseLevel, // Strength determines creativity/noise
         // aspectRatio 제거 - 원본 이미지 비율 유지
     });
 
@@ -500,6 +624,94 @@ export const applyOutfitToBaseModel = async (
     ], { aspectRatio: '9:16', temperature: 0.5 });
 
     if (result.type !== 'image') throw new Error('Outfit application failed');
+    return result.data;
+};
+
+/**
+ * 🔐 자동 모델 생성: 얼굴 없이 신발/옷만 참고하여 새로운 9등신 모델 생성
+ */
+export const generateAutoModel = async (
+    referenceImageBase64: string,
+    gender: 'm' | 'w'
+): Promise<string> => {
+    const refB64 = referenceImageBase64.includes('base64,')
+        ? referenceImageBase64.split('base64,')[1]
+        : referenceImageBase64;
+
+    const genderDesc = gender === 'w' ? 'female' : 'male';
+    const faceDesc = gender === 'w'
+        ? 'soft and delicate facial structure, smooth pale skin, straight natural brows, slightly wide-set soft eyes with a gentle warm tone, a small refined nose bridge, naturally shaped lips with a subtle softness, creating a calm and elegant expression. Long flowing hair that moves naturally.'
+        : 'sharp and defined facial structure, clear skin, natural thick brows, deep-set confident eyes, straight nose bridge, well-defined lips with a composed expression. Short styled hair.';
+
+    const prompt = `
+**[TASK: CREATE NEW FASHION MODEL PHOTO]**
+
+Generate a completely NEW professional fashion photograph of a ${genderDesc} supermodel.
+
+---
+
+**[THE MODEL]**
+
+Create a brand new 9-head-tall fashion supermodel:
+- ${faceDesc}
+- Body proportions: 9-head-tall supermodel proportions
+- Very small head relative to tall, elongated body
+- Long legs, long arms, slim elegant silhouette
+- Full body visible from head to toe
+- Professional fashion model physique
+
+---
+
+**[THE OUTFIT - FROM REFERENCE IMAGE]**
+
+Look at the reference image and dress this NEW model in the EXACT same outfit:
+- Copy the exact top/shirt (same color, design, material, fit)
+- Copy the exact bottom/skirt/pants (same style, length)
+- Copy the exact shoes (same design, color, brand style - VERY IMPORTANT)
+- Copy any bags, accessories visible
+
+The outfit and especially the SHOES must look identical to the reference image.
+
+---
+
+**[POSE & SETTING]**
+
+- Natural, confident fashion model pose
+- Full body shot from head to toe
+- Elegant studio or lifestyle background
+- Soft cinematic lighting with gentle highlights
+- Professional fashion photography aesthetic
+- Dreamy, high-fashion magazine quality
+
+---
+
+**[IMPORTANT]**
+
+This is a completely NEW person. Do NOT use the face from the reference image.
+Generate a new beautiful face that fits the supermodel aesthetic.
+Focus on making the SHOES and OUTFIT match the reference exactly.
+The overall image should look like a high-end fashion editorial.
+
+---
+
+**[OUTPUT]**
+
+A stunning 8K professional fashion photograph:
+- Brand new 9-head-tall supermodel
+- Full body from head to toe
+- Wearing the exact outfit and shoes from reference
+- Dreamy, high-fashion aesthetic
+- Magazine quality photography
+`;
+
+    const result = await callGeminiSecure(prompt, [
+        { data: refB64, mimeType: 'image/png' }
+    ], {
+        temperature: 0.7,
+        aspectRatio: '9:16'
+    });
+
+    if (result.type !== 'image') throw new Error('Auto model generation failed');
     return result.data;
 };
 

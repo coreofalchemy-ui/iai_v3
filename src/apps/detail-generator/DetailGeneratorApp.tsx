@@ -752,7 +752,7 @@ export default function DetailGeneratorApp() {
         setTextElements([]);
     };
 
-    // JPG 내보내기 핸들러
+    // JPG 내보내기 핸들러 - 히어로 제외, html2canvas로 전체 프리뷰 캡처 (고화질)
     const handleExportJPG = async () => {
         if (!previewRef.current) {
             alert('프리뷰 영역을 찾을 수 없습니다.');
@@ -798,24 +798,42 @@ export default function DetailGeneratorApp() {
             }
 
             // 이미지 로딩 완료 대기
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 500));
 
-            // 전체 콘텐츠 크기 계산
-            const scrollHeight = previewRef.current.scrollHeight;
-
+            // html2canvas로 캡처 - 고화질
             const canvas = await html2canvas(previewRef.current, {
-                scale: 1.5, // 품질과 성능 균형
+                scale: 3, // 고화질을 위해 scale 3으로 증가
                 useCORS: true,
                 allowTaint: true,
                 backgroundColor: '#ffffff',
-                width: targetWidth,
-                height: scrollHeight,
-                windowWidth: targetWidth,
-                windowHeight: scrollHeight,
-                scrollX: 0,
-                scrollY: 0,
                 logging: false,
-                imageTimeout: 20000,
+                imageTimeout: 30000,
+                removeContainer: true,
+                onclone: (clonedDoc, clonedElement) => {
+                    // 클론된 요소에서 히어로 섹션 제거
+                    const clonedHero = clonedElement.querySelector('[data-section="hero"]');
+                    if (clonedHero) {
+                        clonedHero.remove();
+                    }
+
+                    // 클론된 요소 스타일 조정 - 정확한 너비로 설정
+                    clonedElement.style.width = `${targetWidth}px`;
+                    clonedElement.style.maxWidth = `${targetWidth}px`;
+                    clonedElement.style.minWidth = `${targetWidth}px`;
+                    clonedElement.style.padding = '0';
+                    clonedElement.style.margin = '0';
+                    clonedElement.style.border = 'none';
+                    clonedElement.style.boxShadow = 'none';
+                    clonedElement.style.transform = 'none';
+                    clonedElement.style.overflow = 'visible';
+
+                    // 모든 자식 이미지도 너비 맞춤
+                    const allImages = clonedElement.querySelectorAll('img');
+                    allImages.forEach((img: HTMLImageElement) => {
+                        img.style.maxWidth = '100%';
+                        img.style.width = '100%';
+                    });
+                }
             });
 
             // 원본 src 복원
@@ -823,9 +841,26 @@ export default function DetailGeneratorApp() {
                 img.src = src;
             });
 
+            // 캔버스 크기 조정 (정확한 targetWidth로, 고화질 리사이즈)
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = targetWidth * 2; // 2배 해상도로 출력
+            const aspectRatio = canvas.height / canvas.width;
+            finalCanvas.height = Math.round(targetWidth * 2 * aspectRatio);
+
+            const ctx = finalCanvas.getContext('2d');
+            if (ctx) {
+                // 고품질 리사이즈 설정
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+                ctx.drawImage(canvas, 0, 0, finalCanvas.width, finalCanvas.height);
+            }
+
+            // JPG로 다운로드 (quality 1.0으로 최대 품질)
             const link = document.createElement('a');
-            link.download = `detail_page_${previewDevice}_${Date.now()}.jpg`;
-            link.href = canvas.toDataURL('image/jpeg', 0.95);
+            link.download = `detail_page_${previewDevice}_${targetWidth * 2}px_${Date.now()}.jpg`;
+            link.href = finalCanvas.toDataURL('image/jpeg', 1.0);
             link.click();
         } catch (error) {
             console.error('JPG 내보내기 오류:', error);
@@ -1828,8 +1863,8 @@ export default function DetailGeneratorApp() {
         }
     };
 
-    // Section Image Download Handler
-    const handleDownloadSectionImage = () => {
+    // Section Image Download Handler - JPG with device-based width
+    const handleDownloadSectionImage = async () => {
         const sectionId = contextMenu.targetId;
         if (!sectionId) return;
         const imageUrl = generatedData.imageUrls?.[sectionId];
@@ -1838,13 +1873,53 @@ export default function DetailGeneratorApp() {
             return;
         }
 
-        const link = document.createElement('a');
-        link.id = 'download-link'; // visual aid if debug needed
-        link.href = imageUrl;
-        link.download = `section_${sectionId}_${Date.now()}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        // Device-based target width
+        const targetWidth = previewDevice === 'desktop' ? 1000 : (previewDevice === 'tablet' ? 768 : 640);
+
+        try {
+            // Create image element
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+
+            await new Promise<void>((resolve, reject) => {
+                img.onload = () => resolve();
+                img.onerror = () => reject(new Error('Failed to load image'));
+                img.src = imageUrl;
+            });
+
+            // Calculate new height maintaining aspect ratio
+            const aspectRatio = img.height / img.width;
+            const targetHeight = Math.round(targetWidth * aspectRatio);
+
+            // Create canvas and draw resized image
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('Canvas context not available');
+
+            // Draw white background for JPG
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, targetWidth, targetHeight);
+            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+            // Download as JPG
+            const link = document.createElement('a');
+            link.download = `section_${sectionId}_${previewDevice}_${targetWidth}px_${Date.now()}.jpg`;
+            link.href = canvas.toDataURL('image/jpeg', 0.95);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (error) {
+            console.error('이미지 다운로드 오류:', error);
+            // Fallback to direct download
+            const link = document.createElement('a');
+            link.href = imageUrl;
+            link.download = `section_${sectionId}_${Date.now()}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
         setContextMenu(prev => ({ ...prev, visible: false }));
     };
 
