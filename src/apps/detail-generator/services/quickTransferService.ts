@@ -202,47 +202,70 @@ export async function regenerateShoesOnly(
 
 TASK: Generate a photo where the model is WEARING the uploaded shoes.
 ⚠️ The model MUST be wearing the shoes from Image 2 - this is non-negotiable.
-⚠️ Analyze Image 1 (model photo) and match EVERYTHING to it.
+⚠️ SHOE DETAILS MUST BE 100% IDENTICAL - NO CHANGES ALLOWED.
 
 ---
 
-STEP 1: ANALYZE MODEL PHOTO (Image 1)
-Before generating, study Image 1 carefully:
-- What is the COLOR TEMPERATURE? (warm/golden vs cool/blue)
-- What is the LIGHTING MOOD? (soft/harsh, direction)
-- What is the FILM LOOK? (vintage, modern, matte, contrasty)
-- What is the SATURATION level?
-- What is the CONTRAST level?
-- What is the overall AESTHETIC/VIBE?
+🔒 ABSOLUTE LOCK - MODEL (Image 1):
+The following elements are LOCKED and CANNOT be modified:
+- Face and facial features (pixel-perfect preservation)
+- Hair style, color, and texture
+- Body pose and proportions (exact same position)
+- All clothing (shirt, pants, accessories)
+- Background and environment
+- Camera angle and framing
+- Lighting direction and quality
 
-STEP 2: APPLY SAME AESTHETIC TO SHOES
-The shoes from Image 2 must be rendered with:
-- SAME color temperature as Image 1
-- SAME lighting direction and quality
-- SAME film look/processing
-- SAME saturation and contrast levels
-- The shoes should look like they were in the ORIGINAL PHOTO
+---
 
-STEP 3: NATURAL SHOE WEARING
-The model must PHYSICALLY WEAR the shoes:
-- Feet are INSIDE the shoes (not floating nearby)
-- Ankles connect naturally to shoe collars
-- Shoes conform to foot shape with natural creases
-- Weight distribution shows shoes are being worn
-- Laces/straps appear tied/fastened on feet
-- Shoes are flat on the floor with proper shadows
+🔒 ABSOLUTE LOCK - SHOE DETAILS (Image 2):
+You MUST analyze and preserve every single shoe detail:
+
+STEP 1: 3D GEOMETRY ANALYSIS
+- Shoe silhouette and overall shape
+- Sole thickness and curvature
+- Toe box shape (round, square, pointed)
+- Heel height and angle
+- Upper height and collar shape
+
+STEP 2: SURFACE DETAIL ANALYSIS
+- Material type (leather, suede, mesh, canvas, synthetic)
+- Surface texture (smooth, pebbled, perforated, ribbed)
+- Stitching patterns and thread colors
+- Panel divisions and overlays
+- Logo placement and size
+- Embossed/debossed patterns
+
+STEP 3: COLOR ANALYSIS
+- Primary color and shade (EXACT hex match)
+- Secondary colors and accents
+- Gradient or color-blocking patterns
+- Midsole and outsole colors
+- Lace/strap colors
+
+STEP 4: HARDWARE & ACCESSORIES
+- Lace type (flat, round, rope)
+- Eyelets (metal color and shape)
+- Buckles, zippers, velcro
+- Brand logos and tags
+- Reflective elements
+
+---
+
+RENDERING REQUIREMENTS:
+1. Render shoes as 3D objects with correct perspective
+2. Apply model photo's lighting to shoes naturally
+3. Shoes must be ON the model's feet (not floating)
+4. Ankle-to-shoe connection must be natural
+5. Shoes touch the ground with proper shadow
+6. Shoe proportions match foot size realistically
 
 WHAT TO KEEP FROM IMAGE 1:
-- Face and identity (pixel-perfect)
-- Hair style and color
-- Body pose and proportions
-- All clothing (shirt, pants, etc.)
-- Background and environment
-- Lighting direction
+- Everything except the shoes on feet
 
 WHAT TO TAKE FROM IMAGE 2:
-- Shoe design, color, material, details
-- Model must WEAR these exact shoes
+- Every single detail of the shoe
+- Must be 100% identical - no simplification
 
 FRAMING:
 - Full body shot (head to toe)
@@ -253,13 +276,11 @@ QUALITY:
 - Photorealistic, 8K, ultra-sharp
 - Commercial photography style
 - No blur, no haze
+- Shoes must look like actual product photography
 
 OUTPUT:
-A new photograph where:
-1. The model looks EXACTLY like Image 1
-2. But is naturally WEARING the shoes from Image 2
-3. The shoes match Image 1's color/tone/mood perfectly
-4. It looks like ONE cohesive professional photo`;
+A photograph where the model from Image 1 is wearing the EXACT shoes from Image 2.
+Every shoe detail (stitching, texture, logo, color) must be perfectly preserved.`;
 
 
     // Map resolution to config if needed, or pass as metadata
@@ -268,9 +289,10 @@ A new photograph where:
     const dimensions = await extractImageDimensions(baseB64);
     const aspectRatio = `${dimensions.width}:${dimensions.height}`;
 
-    // Force strict output size: 750x900
+    // Use resolution option for image size
+    const imageSize = options?.resolution || '1K';
     const config = {
-        imageSize: '1K',
+        imageSize,
         aspectRatio: '750:900'
     };
 
@@ -293,7 +315,7 @@ A new photograph where:
 export async function bringModelToStudio(
     modelImageUrl: string,
     shoeImageUrl: string,
-    options?: { resolution?: '1K' | '4K'; customBackgroundUrl?: string }
+    options?: { resolution?: '1K' | '2K' | '4K'; customBackgroundUrl?: string }
 ): Promise<string> {
     const modelB64 = await urlToBase64(modelImageUrl);
     const shoeB64 = await urlToBase64(shoeImageUrl);
@@ -411,9 +433,10 @@ QUALITY:
 OUTPUT:
 A professional studio photograph where model naturally wears the shoes.`;
 
-    // Force strict output size: 750x900
+    // Use resolution option for image size
+    const imageSize = options?.resolution || '1K';
     const config = {
-        imageSize: '1K',
+        imageSize,
         aspectRatio: '750:900'
     };
 
