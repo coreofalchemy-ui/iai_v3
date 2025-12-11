@@ -310,6 +310,110 @@ Every shoe detail (stitching, texture, logo, color) must be perfectly preserved.
 }
 
 /**
+ * 🔐 다중 신발 이미지 참조 신발 착화
+ * 모든 업로드된 신발 이미지를 AI가 분석하여 가장 적절한 앵글로 신발 착화
+ */
+export async function applyShoeFromMultipleReferences(
+    modelImageUrl: string,
+    shoeImageUrls: string[],  // 모든 신발 이미지 URL 배열
+    options?: { resolution?: '1K' | '2K' | '4K' }
+): Promise<string> {
+    console.log(`👟 다중 신발 참조 착화 시작 - ${shoeImageUrls.length}장의 신발 이미지 분석`);
+
+    const modelB64 = await urlToBase64(modelImageUrl);
+
+    // 모든 신발 이미지를 base64로 변환
+    const shoeB64List: string[] = [];
+    for (const url of shoeImageUrls) {
+        const b64 = await urlToBase64(url);
+        shoeB64List.push(b64);
+    }
+
+    const prompt = `🚨 다중 신발 이미지 참조 신발 착화 - 최고 정확도 🚨
+
+당신에게 1장의 모델 이미지와 ${shoeImageUrls.length}장의 신발 이미지가 제공됩니다.
+
+📷 이미지 구성:
+- Image 1: 모델 사진 (신발을 착용시킬 대상)
+- Image 2~${shoeImageUrls.length + 1}: 신발의 다양한 앵글 사진
+
+---
+
+🎯 미션: 모든 신발 이미지를 분석하고, 모델에게 해당 신발을 착화시키세요.
+
+📋 신발 분석 프로세스 (모든 이미지 참조):
+
+STEP 1: 전체 이미지에서 신발 형태 분석
+- 각 이미지에서 보이는 각도 파악 (정면, 측면, 후면, 상단 등)
+- 전체적인 실루엣과 높이 파악
+- 발등 높이, 굽 높이, 발목 라인 확인
+
+STEP 2: 디테일 추출 (모든 이미지 종합)
+- 재질: 가죽, 스웨이드, 메쉬, 캔버스, 합성피혁 등
+- 색상: 정확한 색상 코드, 그라데이션, 색상 조합
+- 스티칭: 바느질 패턴, 실 색상, 위치
+- 로고: 브랜드 로고 위치, 크기, 형태
+- 밑창: 색상, 두께, 패턴
+- 끈/버클: 끈 종류, 아이렛 형태, 금속 색상
+- 트림: 지퍼, 벨크로, 장식 등
+
+STEP 3: 3D 형태 재구성
+- 여러 각도의 사진을 종합하여 신발의 3D 형태 이해
+- 모델의 발 각도에 맞게 올바른 원근법 적용
+- 신발 굽힘, 구김 등 자연스러운 착화 상태 표현
+
+---
+
+🔒 모델 보존 (절대 변경 금지):
+- 얼굴, 헤어스타일, 표정 100% 유지
+- 포즈와 자세 그대로 유지
+- 모든 의류 (신발 제외) 그대로 유지
+- 배경과 조명 그대로 유지
+- 카메라 앵글과 프레이밍 유지
+
+🔒 신발 렌더링 요구사항:
+- ${shoeImageUrls.length}장의 사진에서 추출한 모든 디테일 반영
+- 모델 사진의 조명에 맞게 신발에 자연스러운 조명 적용
+- 신발이 발에 자연스럽게 착용된 상태로 렌더링
+- 발목과 신발의 연결부가 자연스럽게 표현
+- 바닥에 자연스러운 그림자 생성
+- 신발 크기가 모델의 발에 맞게 조절
+
+---
+
+⚠️ 경고:
+- 신발 디자인을 단순화하지 마세요
+- 색상을 변경하지 마세요
+- 디테일을 생략하지 마세요
+- 모든 참조 이미지의 정보를 종합하세요
+
+OUTPUT:
+모델이 해당 신발을 실제로 착용한 것처럼 보이는 고품질 패션 사진.
+신발의 모든 디테일이 ${shoeImageUrls.length}장의 참조 사진과 100% 일치해야 함.`;
+
+    // 이미지 배열 구성: 모델 + 모든 신발
+    const imageParts: GeminiImagePart[] = [
+        { data: modelB64, mimeType: 'image/png' },
+        ...shoeB64List.map(data => ({ data, mimeType: 'image/png' as const }))
+    ];
+
+    const imageSize = options?.resolution || '1K';
+    const config = {
+        imageSize,
+        aspectRatio: '750:900'
+    };
+
+    const result = await callGeminiSecure(prompt, imageParts, config);
+
+    if (result.type !== 'image') {
+        throw new Error('다중 신발 참조 착화 실패');
+    }
+
+    console.log(`✅ 신발 착화 완료`);
+    return result.data;
+}
+
+/**
  * 🔐 스튜디오로 데려오기 (배경 변경) - 커스텀 배경 지원
  */
 export async function bringModelToStudio(
@@ -1202,4 +1306,258 @@ export async function executeQuickTransferPipeline(
     }
 
     return result;
+}
+
+// ============================================================================
+// EXPAND TO FULL BODY (Image Outpainting)
+// ============================================================================
+/**
+ * Expand a cropped model image to show the full body
+ * Uses AI outpainting to extend the image while maintaining quality and style
+ */
+export async function expandToFullBody(
+    croppedImageUrl: string,
+    options: { resolution?: '1K' | '2K' | '4K' } = {}
+): Promise<string> {
+    console.log('🔄 Expanding image to full body...');
+
+    const resolution = options.resolution || '1K';
+
+    // Get base64 of the cropped image
+    const croppedB64 = await urlToBase64(croppedImageUrl);
+
+    // Get image dimensions to determine crop direction
+    const dimensions = await extractImageDimensions(croppedImageUrl);
+    const isWiderThanTall = dimensions.width > dimensions.height;
+
+    const prompt = `🚨 CRITICAL: FULL BODY OUTPAINTING - PRESERVE EVERYTHING 🚨
+
+TASK: EXTEND this cropped fashion model photo to show the COMPLETE FULL BODY from head to toe.
+
+⛔ FORBIDDEN - DO NOT DO THESE:
+- DO NOT change the model's pose AT ALL
+- DO NOT change the model's body position or angle
+- DO NOT change any clothing items
+- DO NOT change the background style
+- DO NOT create a new image - you MUST extend the existing one
+- DO NOT modify ANY pixels from the original image
+
+✅ WHAT YOU MUST DO:
+1. Analyze the image to find which body parts are cropped/cut off
+2. If HEAD IS CUT OFF: Generate a realistic face and hair that matches:
+   - The body type and skin tone visible in the image
+   - A face that naturally belongs to this person
+   - Hair style and color that fits the fashion/outfit style
+3. If FEET/LEGS ARE CUT OFF: Generate the lower body continuation:
+   - Same exact pose direction continuing naturally
+   - Add appropriate footwear matching the outfit style
+   - Feet flat on ground in the same standing position
+
+🔒 ABSOLUTE PRESERVATION RULES:
+1. Every pixel of the original image MUST remain 100% identical
+2. The pose, body angle, and direction MUST stay exactly the same
+3. All clothing MUST remain identical
+4. The background MUST extend seamlessly
+5. Lighting direction, color temperature, and shadows MUST match perfectly
+6. The generated parts must blend INVISIBLY with the original
+
+📋 OUTPUT REQUIREMENTS:
+- Show the COMPLETE person from the very top of head to bottom of feet
+- Portrait orientation with proper headroom and footroom
+- The seam between original and new content must be COMPLETELY INVISIBLE
+- Quality must match the original photo exactly
+
+⚠️ REMEMBER: The person in the output MUST look like they were always in this exact pose - you are only revealing the parts that were cropped, NOT changing anything.`;
+
+    const config = {
+        imageSize: resolution,
+        aspectRatio: '3:4'  // Portrait for full body
+    };
+
+    const result = await callGeminiSecure(
+        prompt,
+        [{ data: croppedB64, mimeType: 'image/png' }],
+        config
+    );
+
+    if (result.type !== 'image') {
+        throw new Error('Full body expansion failed - no image returned');
+    }
+
+    console.log('✅ Full body expansion complete');
+    return result.data;
+}
+
+// ============================================================================
+// CAMERA ANGLE GENERATION (Generate from different viewpoints)
+// ============================================================================
+// 상단 4개: 전신 뷰 (Outer = 90도 측면, Inner = 45도 사선)
+// 하단 4개: 하반신(다리) 클로즈업 뷰
+export type CameraAnglePosition =
+    // 상단 - 전신 뷰
+    | 'fullbody_left_outer' | 'fullbody_left_inner'      // Full body - left side
+    | 'fullbody_right_outer' | 'fullbody_right_inner'    // Full body - right side
+    // 하단 - 하반신(다리) 클로즈업
+    | 'legs_left_outer' | 'legs_left_inner'              // Legs closeup - left side
+    | 'legs_right_outer' | 'legs_right_inner';           // Legs closeup - right side
+
+const CAMERA_ANGLE_DESCRIPTIONS: Record<CameraAnglePosition, string> = {
+    // 전신 뷰 (Full body) - 좌측/우측 방향 더 강조
+    'fullbody_left_outer': 'CAMERA is positioned on the LEFT SIDE of the model, shooting at exactly 90-degree angle. Model\'s LEFT arm and LEFT shoulder are closest to camera. This is a PURE SIDE PROFILE from the LEFT.',
+    'fullbody_left_inner': 'CAMERA is positioned on the FRONT-LEFT of the model at 45-degree angle. Model is turned to show their LEFT side more. THREE-QUARTER VIEW from LEFT.',
+    'fullbody_right_outer': 'CAMERA is positioned on the RIGHT SIDE of the model, shooting at exactly 90-degree angle. Model\'s RIGHT arm and RIGHT shoulder are closest to camera. This is a PURE SIDE PROFILE from the RIGHT.',
+    'fullbody_right_inner': 'CAMERA is positioned on the FRONT-RIGHT of the model at 45-degree angle. Model is turned to show their RIGHT side more. THREE-QUARTER VIEW from RIGHT.',
+    // 하반신 클로즈업 (Legs closeup)
+    'legs_left_outer': 'LOWER BODY ONLY from LEFT SIDE at 90-degree. Camera on the LEFT, shooting model\'s LEFT leg prominently. Show waist to feet only.',
+    'legs_left_inner': 'LOWER BODY ONLY from FRONT-LEFT at 45-degree. Camera angled from LEFT side. Show waist to feet only.',
+    'legs_right_outer': 'LOWER BODY ONLY from RIGHT SIDE at 90-degree. Camera on the RIGHT, shooting model\'s RIGHT leg prominently. Show waist to feet only.',
+    'legs_right_inner': 'LOWER BODY ONLY from FRONT-RIGHT at 45-degree. Camera angled from RIGHT side. Show waist to feet only.'
+};
+
+/**
+ * Generate the same model from a different camera angle
+ */
+export async function generateFromCameraAngle(
+    modelImageUrl: string,
+    angle: CameraAnglePosition,
+    options: { resolution?: '1K' | '2K' | '4K' } = {}
+): Promise<string> {
+    console.log(`📷 Generating from camera angle: ${angle}`);
+
+    const resolution = options.resolution || '1K';
+    const modelB64 = await urlToBase64(modelImageUrl);
+    const angleDescription = CAMERA_ANGLE_DESCRIPTIONS[angle];
+
+    // 하반신(다리) 클로즈업인지 확인
+    const isLegsCloseup = angle.startsWith('legs_');
+
+    const prompt = isLegsCloseup ?
+        // 하반신(다리) 클로즈업 프롬프트 - 방향 강조
+        `🎬 LOWER BODY CLOSE-UP FASHION SHOT
+
+📷 MANDATORY CAMERA POSITION:
+${angleDescription}
+
+⚠️ THIS IS THE MOST CRITICAL REQUIREMENT - THE CAMERA ANGLE:
+${angle.includes('left') ?
+            '- THE CAMERA MUST BE ON THE **LEFT SIDE** OF THE MODEL\n- We should see the model\'s LEFT LEG more prominently\n- The LEFT side of the hips, skirt/pants should be MORE VISIBLE' :
+            '- THE CAMERA MUST BE ON THE **RIGHT SIDE** OF THE MODEL\n- We should see the model\'s RIGHT LEG more prominently\n- The RIGHT side of the hips, skirt/pants should be MORE VISIBLE'}
+${angle.includes('outer') ?
+            '- This is a 90-DEGREE PURE SIDE SHOT' :
+            '- This is a 45-DEGREE THREE-QUARTER VIEW'}
+
+⚠️ CRITICAL OUTPUT REQUIREMENTS:
+- Show ONLY the LOWER BODY: from waist/hips DOWN to feet
+- DO NOT include face, upper body, or arms
+- This is a CROPPED/ZOOMED fashion photography shot
+
+🔒 ABSOLUTE PRESERVATION - MATCH EXACTLY:
+1. SAME clothing: 동일한 스커트/바지 색상, 패턴, 질감, 핏
+2. SAME shoes: 동일한 신발 스타일, 색상, 디테일
+3. SAME legs: 동일한 체형, 피부톤, 다리 포즈
+4. SAME photography style: 조명, 색감, 그림자 일치
+5. SAME background: 비슷한 세팅, 바닥, 환경
+
+📸 PHOTO REALISM REQUIREMENTS:
+- 원본 사진과 동일한 색온도
+- 원본과 동일한 조명 방향과 강도
+- 원본과 동일한 사진 그레인과 품질
+- 동일한 촬영 세션에서 찍은 것처럼 보여야 함
+- 전문 패션 이커머스 촬영 스타일
+- AI가 아닌 실제 사진처럼 보여야 함
+
+REMEMBER: ${angle.includes('left') ? 'LEFT SIDE' : 'RIGHT SIDE'} of the legs must be prominent!` :
+        // 전신 프롬프트 - 방향을 극도로 강력하게 강조
+        `🚨🚨🚨 CAMERA ANGLE INSTRUCTION - READ THIS FIRST 🚨🚨🚨
+
+📷 YOU ARE A PHOTOGRAPHER STANDING ON THE ${angle.includes('left') ? '<<<< LEFT SIDE <<<< ' : '>>>> RIGHT SIDE >>>>'} OF THE MODEL.
+
+${angle.includes('left') ? `
+╔═══════════════════════════════════════════════════════════════╗
+║  🎯 CAMERA IS ON THE LEFT (왼쪽에서 촬영)                      ║
+║                                                               ║
+║          [CAMERA] ← ← ← 📷                                    ║
+║               ↘                                               ║
+║                 ↘                                             ║
+║                   [MODEL facing forward]                      ║
+║                                                               ║
+║  The model's LEFT ARM and LEFT SHOULDER are CLOSEST to you.   ║
+║  You can see the LEFT PROFILE of the model more than right.   ║
+║  The RIGHT side of the model is FURTHER AWAY from camera.     ║
+╚═══════════════════════════════════════════════════════════════╝
+
+🚫 FORBIDDEN: 
+- DO NOT show the right side of the model prominently
+- DO NOT generate a front-facing or right-side photo
+- The output MUST clearly show you shot from the LEFT
+
+✅ REQUIRED:
+- Model's LEFT arm MUST be closer to camera
+- Model's LEFT shoulder MUST be more visible
+- We should see LEFT PROFILE of the face (not right)
+` : `
+╔═══════════════════════════════════════════════════════════════╗
+║  🎯 CAMERA IS ON THE RIGHT (오른쪽에서 촬영)                   ║
+║                                                               ║
+║                                    📷 → → → [CAMERA]         ║
+║                                  ↙                            ║
+║                                ↙                              ║
+║       [MODEL facing forward]                                  ║
+║                                                               ║
+║  The model's RIGHT ARM and RIGHT SHOULDER are CLOSEST to you. ║
+║  You can see the RIGHT PROFILE of the model more than left.   ║
+║  The LEFT side of the model is FURTHER AWAY from camera.      ║
+╚═══════════════════════════════════════════════════════════════╝
+
+🚫 FORBIDDEN:
+- DO NOT show the left side of the model prominently
+- DO NOT generate a front-facing or left-side photo
+- The output MUST clearly show you shot from the RIGHT
+
+✅ REQUIRED:
+- Model's RIGHT arm MUST be closer to camera
+- Model's RIGHT shoulder MUST be more visible
+- We should see RIGHT PROFILE of the face (not left)
+`}
+
+${angle.includes('outer') ?
+            '📐 ANGLE: 90-DEGREE PURE SIDE PROFILE - Almost no front visible. Pure silhouette view.' :
+            '📐 ANGLE: 45-DEGREE THREE-QUARTER VIEW - Some front visible but tilted to ' + (angle.includes('left') ? 'LEFT' : 'RIGHT')}
+
+---
+
+🔒 PRESERVE FROM ORIGINAL:
+1. SAME PERSON: 동일한 얼굴, 헤어스타일, 체형, 피부톤
+2. SAME OUTFIT: 모든 의류 - 색상, 패턴, 질감 동일
+3. SAME SHOES: 동일한 신발
+4. SAME STYLE: 촬영 스타일, 분위기, 조명 동일
+
+📸 PHOTO QUALITY:
+- Photorealistic, professional fashion photography
+- Same lighting quality as original
+- Same color grading as original
+
+🎯 THE ONLY CHANGE: Camera moved to the ${angle.includes('left') ? 'LEFT' : 'RIGHT'} side of the model.
+
+⚠️ FINAL CHECK: Before generating, ask yourself:
+"Am I showing the model from the ${angle.includes('left') ? 'LEFT' : 'RIGHT'} side?"
+If no, you are doing it WRONG. Regenerate from the ${angle.includes('left') ? 'LEFT' : 'RIGHT'} perspective.`;
+
+    const config = {
+        imageSize: resolution,
+        aspectRatio: isLegsCloseup ? '4:3' : '3:4'  // 다리 클로즈업은 가로, 전신은 세로
+    };
+
+    const result = await callGeminiSecure(
+        prompt,
+        [{ data: modelB64, mimeType: 'image/png' }],
+        config
+    );
+
+    if (result.type !== 'image') {
+        throw new Error(`Camera angle generation failed - ${angle}`);
+    }
+
+    console.log(`✅ Generated from angle: ${angle}`);
+    return result.data;
 }

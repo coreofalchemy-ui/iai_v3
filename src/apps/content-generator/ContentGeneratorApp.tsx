@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { bringModelToStudio, regenerateShoesOnly } from '../detail-generator/services/quickTransferService';
+import { bringModelToStudio, regenerateShoesOnly, expandToFullBody, generateFromCameraAngle, CameraAnglePosition, applyShoeFromMultipleReferences } from '../detail-generator/services/quickTransferService';
+import { detectClothingRegions, changeRegionColor, replaceRegionClothing, ClothingRegion, SegmentationResult } from '../detail-generator/services/modelSegmentationService';
+import { RegionOverlay, ColorPickerPopup } from '../detail-generator/components/RegionOverlay';
 import { FILTER_PRESETS, FilterPresetName, getFilterStyles } from '../detail-generator/services/photoFilterService';
 
 // ==================== Design Tokens ====================
@@ -51,6 +53,9 @@ interface GeneratedContent {
     imageOffsetY?: number; // 이미지 Y 오프셋 (%)
     // 홀드 상태 (의류/색상 변경용)
     isHeld?: boolean;
+    isAnalyzing?: boolean; // AI 분석 중
+    segmentation?: SegmentationResult; // 분석된 의류 영역
+    showCameraView?: boolean; // 카메라 앵글 보기 모드
 }
 
 interface ContextMenuState {
@@ -153,13 +158,13 @@ export default function ContentGeneratorApp() {
         };
     }, [historyIndex]);
 
-    // Canvas wheel zoom OR selected image scale adjustment
+    // Canvas wheel zoom OR selected image scale adjustment (Alt + Wheel)
     const handleCanvasWheel = useCallback((e: React.WheelEvent) => {
         e.preventDefault();
         e.stopPropagation();
 
-        // If exactly one image is selected, adjust that image's internal scale
-        if (selectedContentIds.size === 1) {
+        // Alt + Wheel: If exactly one image is selected, adjust that image's internal scale
+        if (e.altKey && selectedContentIds.size === 1) {
             const contentId = Array.from(selectedContentIds)[0];
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
 
@@ -174,7 +179,7 @@ export default function ContentGeneratorApp() {
             return;
         }
 
-        // Otherwise, zoom the canvas (Figma-style - centered on mouse position)
+        // Without Alt: zoom the canvas (Figma-style - centered on mouse position)
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) return;
 
@@ -218,6 +223,13 @@ export default function ContentGeneratorApp() {
         if (historyIndex > 0) {
             setHistoryIndex(prev => prev - 1);
             setGeneratedContents(history[historyIndex - 1] || []);
+        }
+    }, [history, historyIndex]);
+
+    const handleRedo = useCallback(() => {
+        if (historyIndex < history.length - 1) {
+            setHistoryIndex(prev => prev + 1);
+            setGeneratedContents(history[historyIndex + 1] || []);
         }
     }, [history, historyIndex]);
 
@@ -425,12 +437,19 @@ export default function ContentGeneratorApp() {
                 return;
             }
 
-            // Default left click on empty canvas = selection box for multi-select
-            const x = (e.clientX - rect.left - canvasPan.x) / canvasZoom;
-            const y = (e.clientY - rect.top - canvasPan.y) / canvasZoom;
-            setSelectionBox({ startX: x, startY: y, endX: x, endY: y, active: true });
-            // Clear selection if not holding Ctrl/Shift
-            if (!e.ctrlKey && !e.shiftKey) {
+            // Left click on empty canvas = panning mode (no modifier)
+            // Ctrl/Shift + left click = selection box
+            if (e.ctrlKey || e.shiftKey) {
+                // Selection box for multi-select
+                const x = (e.clientX - rect.left - canvasPan.x) / canvasZoom;
+                const y = (e.clientY - rect.top - canvasPan.y) / canvasZoom;
+                setSelectionBox({ startX: x, startY: y, endX: x, endY: y, active: true });
+            } else {
+                // Default: start panning
+                e.preventDefault();
+                setIsPanning(true);
+                setPanStart({ x: e.clientX, y: e.clientY, panX: canvasPan.x, panY: canvasPan.y });
+                // Clear selection
                 setSelectedContentIds(new Set());
             }
         }
@@ -629,39 +648,59 @@ export default function ContentGeneratorApp() {
         setContextMenu(prev => ({ ...prev, visible: false }));
     };
 
-    // Auto-arrange images from top-left, respecting each image's current size
+    // Auto-arrange images to fill screen with minimal empty space
     const autoArrange = () => {
-        const padding = 20;
-        const startX = 40;
-        const startY = 40;
-        let currentX = startX;
-        let currentY = startY;
-        let rowMaxHeight = 0;
+        if (generatedContents.length === 0) return;
+
         const canvasWidth = canvasRef.current?.clientWidth || 800;
+        const canvasHeight = canvasRef.current?.clientHeight || 600;
+        const padding = 12;
+        const margin = 20;
+
+        // Calculate optimal number of columns based on image count
+        const imageCount = generatedContents.length;
+        let cols: number;
+
+        if (imageCount <= 2) cols = imageCount;
+        else if (imageCount <= 4) cols = 2;
+        else if (imageCount <= 6) cols = 3;
+        else if (imageCount <= 9) cols = 3;
+        else cols = 4;
+
+        const rows = Math.ceil(imageCount / cols);
+
+        // Calculate available space
+        const availableWidth = canvasWidth - (margin * 2) - (padding * (cols - 1));
+        const availableHeight = canvasHeight - (margin * 2) - (padding * (rows - 1));
+
+        // Calculate optimal size per cell (3:4 aspect ratio for fashion)
+        const cellWidth = Math.floor(availableWidth / cols);
+        const cellHeight = Math.floor(cellWidth * (4 / 3));
+
+        // If height overflows, recalculate based on height
+        const maxCellHeight = Math.floor(availableHeight / rows);
+        const finalCellHeight = Math.min(cellHeight, maxCellHeight);
+        const finalCellWidth = Math.floor(finalCellHeight * (3 / 4));
 
         const newContents = generatedContents.map((c, index) => {
-            // Check if we need to wrap to next row
-            if (currentX + c.width > canvasWidth - padding && index > 0) {
-                currentX = startX;
-                currentY += rowMaxHeight + padding;
-                rowMaxHeight = 0;
-            }
+            const col = index % cols;
+            const row = Math.floor(index / cols);
 
-            const newContent = { ...c, x: currentX, y: currentY };
-
-            currentX += c.width + padding;
-            rowMaxHeight = Math.max(rowMaxHeight, c.height);
-
-            return newContent;
+            return {
+                ...c,
+                width: finalCellWidth,
+                height: finalCellHeight,
+                x: margin + col * (finalCellWidth + padding),
+                y: margin + row * (finalCellHeight + padding)
+            };
         });
 
         setGeneratedContents(newContents);
         saveToHistory(newContents);
 
-        // Scroll canvas to top-left to show arranged images
-        if (canvasRef.current) {
-            canvasRef.current.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
-        }
+        // Reset canvas to show all images
+        setCanvasPan({ x: 0, y: 0 });
+        setCanvasZoom(1);
     };
 
     const handleDeleteContent = (contentIds: Set<string>) => {
@@ -723,12 +762,183 @@ export default function ContentGeneratorApp() {
     };
 
     // ==================== Hold Feature (Clothing/Color Change) ====================
-    const toggleHold = (contentId: string) => {
+    const toggleHold = async (contentId: string) => {
+        const content = generatedContents.find(c => c.id === contentId);
+        if (!content) return;
+
+        if (content.isHeld) {
+            // Release hold
+            const newContents = generatedContents.map(c =>
+                c.id === contentId ? { ...c, isHeld: false } : c
+            );
+            setGeneratedContents(newContents);
+            saveToHistory(newContents);
+        } else {
+            // Start hold - trigger analysis
+            const newContents = generatedContents.map(c =>
+                c.id === contentId ? { ...c, isHeld: true, isAnalyzing: true } : c
+            );
+            setGeneratedContents(newContents);
+
+            try {
+                setProgress({ current: 1, total: 1, message: '🔍 모델 분석 중...' });
+                const segResult = await detectClothingRegions(content.url);
+
+                // Update with analysis result
+                setGeneratedContents(prev => prev.map(c =>
+                    c.id === contentId ? { ...c, isAnalyzing: false, segmentation: segResult } : c
+                ));
+                console.log('✅ 분석 완료:', segResult.regions);
+            } catch (error) {
+                console.error('분석 실패:', error);
+                setGeneratedContents(prev => prev.map(c =>
+                    c.id === contentId ? { ...c, isAnalyzing: false } : c
+                ));
+            } finally {
+                setProgress({ current: 0, total: 0, message: '' });
+            }
+        }
+    };
+
+    // Color change handler for specific region - creates new image beside original
+    const handleRegionColorChange = async (contentId: string, region: ClothingRegion, color: string) => {
+        const content = generatedContents.find(c => c.id === contentId);
+        if (!content) return;
+
+        try {
+            setProgress({ current: 1, total: 1, message: `🎨 ${region.label} 색상 변경 중...` });
+            setIsGenerating(true);
+
+            const result = await changeRegionColor(content.url, region, color);
+            const resultUrl = result.startsWith('data:') ? result : `data:image/png;base64,${result}`;
+
+            // Create new image beside original instead of replacing
+            const newContent: GeneratedContent = {
+                id: `color-${Date.now()}`,
+                url: resultUrl,
+                width: content.width,
+                height: content.height,
+                x: content.x + content.width + 20,
+                y: content.y
+            };
+            const newContents = [...generatedContents, newContent];
+            setGeneratedContents(newContents);
+            saveToHistory(newContents);
+        } catch (error) {
+            console.error('색상 변경 실패:', error);
+            alert('색상 변경 중 오류가 발생했습니다.');
+        } finally {
+            setIsGenerating(false);
+            setProgress({ current: 0, total: 0, message: '' });
+        }
+    };
+
+    // Clothing replacement handler for specific region - creates new image beside original
+    const handleRegionClothingDrop = async (contentId: string, region: ClothingRegion, file: File) => {
+        const content = generatedContents.find(c => c.id === contentId);
+        if (!content) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const clothingBase64 = e.target?.result as string;
+
+            try {
+                setProgress({ current: 1, total: 1, message: `👔 ${region.label} 교체 중...` });
+                setIsGenerating(true);
+
+                const result = await replaceRegionClothing(content.url, region, clothingBase64);
+                const resultUrl = result.startsWith('data:') ? result : `data:image/png;base64,${result}`;
+
+                // Create new image beside original instead of replacing
+                const newContent: GeneratedContent = {
+                    id: `clothing-${Date.now()}`,
+                    url: resultUrl,
+                    width: content.width,
+                    height: content.height,
+                    x: content.x + content.width + 20,
+                    y: content.y
+                };
+                const newContents = [...generatedContents, newContent];
+                setGeneratedContents(newContents);
+                saveToHistory(newContents);
+            } catch (error) {
+                console.error('교체 실패:', error);
+                alert('의류 교체 중 오류가 발생했습니다.');
+            } finally {
+                setIsGenerating(false);
+                setProgress({ current: 0, total: 0, message: '' });
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    // Color picker state for regions
+    const [colorPickerState, setColorPickerState] = useState<{
+        visible: boolean;
+        x: number;
+        y: number;
+        contentId: string | null;
+        region: ClothingRegion | null;
+    }>({ visible: false, x: 0, y: 0, contentId: null, region: null });
+
+    // Toggle camera view mode for a content
+    const toggleCameraView = (contentId: string) => {
         const newContents = generatedContents.map(c =>
-            c.id === contentId ? { ...c, isHeld: !c.isHeld } : c
+            c.id === contentId ? { ...c, showCameraView: !c.showCameraView } : c
         );
         setGeneratedContents(newContents);
-        saveToHistory(newContents);
+    };
+
+    // Camera angle positions (8 dots)
+    // 상단 4개: 전신 뷰, 하단 4개: 하반신(다리) 클로즈업
+    // Outer = 완전 측면(90도), Inner = 사선(45도)
+    const CAMERA_ANGLE_DOTS: { angle: CameraAnglePosition; label: string; x: string; y: string }[] = [
+        // 상단 - 전신 뷰 (y: 25%)
+        { angle: 'fullbody_left_outer', label: '전신 좌측 (측면)', x: '5%', y: '25%' },
+        { angle: 'fullbody_left_inner', label: '전신 좌측 (사선)', x: '15%', y: '25%' },
+        { angle: 'fullbody_right_outer', label: '전신 우측 (측면)', x: '95%', y: '25%' },
+        { angle: 'fullbody_right_inner', label: '전신 우측 (사선)', x: '85%', y: '25%' },
+        // 하단 - 하반신(다리) 클로즈업 (y: 70%)
+        { angle: 'legs_left_outer', label: '다리 좌측 (측면)', x: '5%', y: '70%' },
+        { angle: 'legs_left_inner', label: '다리 좌측 (사선)', x: '15%', y: '70%' },
+        { angle: 'legs_right_outer', label: '다리 우측 (측면)', x: '95%', y: '70%' },
+        { angle: 'legs_right_inner', label: '다리 우측 (사선)', x: '85%', y: '70%' },
+    ];
+
+    // Handle camera angle dot click
+    const handleCameraAngleClick = async (contentId: string, angle: CameraAnglePosition) => {
+        const content = generatedContents.find(c => c.id === contentId);
+        if (!content) return;
+
+        try {
+            setProgress({ current: 1, total: 1, message: `📷 ${angle} 각도에서 촬영 중...` });
+            setIsGenerating(true);
+
+            const result = await generateFromCameraAngle(content.url, angle, { resolution: use2K ? '2K' : '1K' });
+
+            // Add generated image as new content next to original
+            const img = new Image();
+            img.onload = () => {
+                const newContent: GeneratedContent = {
+                    id: `camera-${Date.now()}`,
+                    url: result.startsWith('data:') ? result : `data:image/png;base64,${result}`,
+                    width: Math.min(img.width, 350),
+                    height: Math.min(img.height, 500),
+                    x: content.x + content.width + 20,
+                    y: content.y
+                };
+                const newContents = [...generatedContents, newContent];
+                setGeneratedContents(newContents);
+                saveToHistory(newContents);
+            };
+            img.src = result.startsWith('data:') ? result : `data:image/png;base64,${result}`;
+        } catch (error) {
+            console.error('카메라 앵글 생성 실패:', error);
+            alert('카메라 앵글에서 촬영 중 오류가 발생했습니다.');
+        } finally {
+            setIsGenerating(false);
+            setProgress({ current: 0, total: 0, message: '' });
+        }
     };
 
     const handleHeldImageDrop = async (contentId: string, files: FileList) => {
@@ -782,13 +992,12 @@ export default function ContentGeneratorApp() {
         if (!content) return;
 
         try {
-            setProgress({ current: 1, total: 1, message: '🔄 이미지 확장 중...' });
+            setProgress({ current: 1, total: 1, message: '🔄 전신 확장 중... (AI 분석 및 생성)' });
             setIsGenerating(true);
 
-            // Use regenerateShoesOnly for image extension - it will preserve the model and extend
-            const result = await regenerateShoesOnly(
+            // Use dedicated expandToFullBody for proper outpainting
+            const result = await expandToFullBody(
                 content.url,
-                content.url, // Use same image - AI will understand to extend
                 { resolution: use2K ? '2K' : '1K' }
             );
 
@@ -813,6 +1022,57 @@ export default function ContentGeneratorApp() {
         } catch (error) {
             console.error('이미지 확장 실패:', error);
             alert('이미지 확장 중 오류가 발생했습니다.');
+        } finally {
+            setIsGenerating(false);
+            setProgress({ current: 0, total: 0, message: '' });
+        }
+    };
+
+    // ==================== 신발 착화 기능 ====================
+    const applyShoeToModel = async (contentId: string) => {
+        const content = generatedContents.find(c => c.id === contentId);
+        if (!content) return;
+
+        if (shoeImages.length === 0) {
+            alert('신발 이미지를 먼저 등록해주세요.');
+            return;
+        }
+
+        try {
+            setProgress({ current: 1, total: 1, message: `👟 신발 착화 중... (${shoeImages.length}장의 신발 이미지 분석)` });
+            setIsGenerating(true);
+            setContextMenu({ visible: false, x: 0, y: 0, contentId: null });
+
+            // 모든 신발 이미지 URL 배열
+            const shoeImageUrls = shoeImages.map(s => s.preview);
+
+            const result = await applyShoeFromMultipleReferences(
+                content.url,
+                shoeImageUrls,
+                { resolution: use2K ? '2K' : '1K' }
+            );
+
+            // 결과 이미지를 원본 옆에 새로 추가
+            const img = new Image();
+            img.onload = () => {
+                const newContent: GeneratedContent = {
+                    id: `shoe-applied-${Date.now()}`,
+                    url: result.startsWith('data:') ? result : `data:image/png;base64,${result}`,
+                    width: Math.min(img.width, 350),
+                    height: Math.min(img.height, 500),
+                    x: content.x + content.width + 20,
+                    y: content.y
+                };
+                const newContents = [...generatedContents, newContent];
+                setGeneratedContents(newContents);
+                saveToHistory(newContents);
+                setSelectedContentIds(new Set([newContent.id]));
+            };
+            img.src = result.startsWith('data:') ? result : `data:image/png;base64,${result}`;
+
+        } catch (error) {
+            console.error('신발 착화 실패:', error);
+            alert('신발 착화 중 오류가 발생했습니다.');
         } finally {
             setIsGenerating(false);
             setProgress({ current: 0, total: 0, message: '' });
@@ -891,6 +1151,12 @@ export default function ContentGeneratorApp() {
                         className="hover:opacity-80 disabled:opacity-40 transition-opacity flex items-center gap-1">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
                         뒤로
+                    </button>
+                    <button onClick={handleRedo} disabled={historyIndex >= history.length - 1}
+                        style={{ background: colors.bgSubtle, color: colors.textSecondary, fontSize: 13, padding: '6px 12px', borderRadius: 8, border: `1px solid ${colors.borderSoft}` }}
+                        className="hover:opacity-80 disabled:opacity-40 transition-opacity flex items-center gap-1">
+                        앞으로
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 10H11a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" /></svg>
                     </button>
                     <button onClick={autoArrange} disabled={generatedContents.length === 0}
                         style={{ background: colors.bgSubtle, color: colors.textSecondary, fontSize: 13, padding: '6px 12px', borderRadius: 8, border: `1px solid ${colors.borderSoft}` }}
@@ -993,15 +1259,15 @@ export default function ContentGeneratorApp() {
                                         }
                                     }}>
 
-                                    {/* Hold indicator - simple drop zone */}
+                                    {/* Hold indicator with analysis */}
                                     {isHeld && (
                                         <>
-                                            {/* HOLD badge */}
+                                            {/* HOLD badge with status */}
                                             <div style={{
                                                 position: 'absolute',
                                                 top: 8,
                                                 right: 8,
-                                                background: '#FF3B30',
+                                                background: content.isAnalyzing ? '#F59E0B' : '#FF3B30',
                                                 color: '#fff',
                                                 fontSize: 10,
                                                 padding: '3px 8px',
@@ -1009,7 +1275,7 @@ export default function ContentGeneratorApp() {
                                                 fontWeight: 600,
                                                 zIndex: 20
                                             }}>
-                                                🔒 HOLD
+                                                {content.isAnalyzing ? '🔍 분석중...' : '🔒 HOLD'}
                                             </div>
 
                                             {/* Drop zone border */}
@@ -1022,23 +1288,90 @@ export default function ContentGeneratorApp() {
                                                 zIndex: 5
                                             }} />
 
-                                            {/* Drop hint */}
+                                            {/* Region Overlay - shows interactive clothing regions */}
+                                            {content.segmentation && content.segmentation.regions.length > 0 && (
+                                                <RegionOverlay
+                                                    regions={content.segmentation.regions}
+                                                    isActive={true}
+                                                    containerWidth={content.width}
+                                                    containerHeight={content.height}
+                                                    onRegionRightClick={(region, e) => {
+                                                        setColorPickerState({
+                                                            visible: true,
+                                                            x: e.clientX,
+                                                            y: e.clientY,
+                                                            contentId: content.id,
+                                                            region
+                                                        });
+                                                    }}
+                                                    onRegionDrop={(region, file) => {
+                                                        handleRegionClothingDrop(content.id, region, file);
+                                                    }}
+                                                />
+                                            )}
+
+                                        </>
+                                    )}
+
+                                    {/* Camera View Mode - 8 angle dots */}
+                                    {content.showCameraView && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            inset: 0,
+                                            zIndex: 25,
+                                            pointerEvents: 'none'
+                                        }}>
+                                            {/* Camera View Badge */}
                                             <div style={{
                                                 position: 'absolute',
-                                                bottom: 12,
-                                                left: '50%',
-                                                transform: 'translateX(-50%)',
-                                                background: 'rgba(0,0,0,0.85)',
+                                                top: 8,
+                                                left: 8,
+                                                background: '#8B5CF6',
                                                 color: '#fff',
-                                                padding: '6px 14px',
-                                                borderRadius: 8,
-                                                fontSize: 11,
-                                                zIndex: 15,
-                                                whiteSpace: 'nowrap'
+                                                fontSize: 10,
+                                                padding: '3px 8px',
+                                                borderRadius: 4,
+                                                fontWeight: 600,
+                                                pointerEvents: 'auto'
                                             }}>
-                                                👟 신발/의류 드롭 → AI 교체 | 우클릭 → 색상 변경
+                                                📷 카메라 뷰
                                             </div>
-                                        </>
+
+                                            {/* 8 Camera Angle Dots */}
+                                            {CAMERA_ANGLE_DOTS.map(dot => (
+                                                <button
+                                                    key={dot.angle}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleCameraAngleClick(content.id, dot.angle);
+                                                    }}
+                                                    title={`${dot.label} 각도에서 촬영`}
+                                                    style={{
+                                                        position: 'absolute',
+                                                        left: dot.x,
+                                                        top: dot.y,
+                                                        transform: 'translate(-50%, -50%)',
+                                                        width: 16,
+                                                        height: 16,
+                                                        borderRadius: '50%',
+                                                        background: '#fff',
+                                                        border: '2px solid #8B5CF6',
+                                                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                                        cursor: 'pointer',
+                                                        pointerEvents: 'auto',
+                                                        transition: 'transform 0.15s, box-shadow 0.15s'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.3)';
+                                                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(139,92,246,0.5)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
+                                                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+                                                    }}
+                                                />
+                                            ))}
+                                        </div>
                                     )}
 
                                     <div style={{
@@ -1461,36 +1794,66 @@ export default function ContentGeneratorApp() {
                         >
                             {generatedContents.find(c => c.id === contextMenu.contentId)?.isHeld ? '🔓 홀드 해제' : '🔒 홀드 (의류변경용)'}
                         </button>
+                        <button
+                            onClick={() => {
+                                if (contextMenu.contentId) toggleCameraView(contextMenu.contentId);
+                                setContextMenu(prev => ({ ...prev, visible: false }));
+                            }}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                width: '100%',
+                                padding: '10px 12px',
+                                fontSize: 13,
+                                color: generatedContents.find(c => c.id === contextMenu.contentId)?.showCameraView ? '#8B5CF6' : colors.textPrimary,
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            {generatedContents.find(c => c.id === contextMenu.contentId)?.showCameraView ? '📷 카메라 뷰 끄기' : '📷 카메라 뷰'}
+                        </button>
+                        {/* 신발 착화 버튼 */}
+                        <button
+                            onClick={() => {
+                                if (contextMenu.contentId) applyShoeToModel(contextMenu.contentId);
+                            }}
+                            disabled={shoeImages.length === 0}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                width: '100%',
+                                padding: '10px 12px',
+                                fontSize: 13,
+                                color: shoeImages.length === 0 ? colors.textMuted : '#F59E0B',
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: shoeImages.length === 0 ? 'not-allowed' : 'pointer',
+                                opacity: shoeImages.length === 0 ? 0.5 : 1
+                            }}
+                        >
+                            👟 신발 착화 {shoeImages.length > 0 ? `(${shoeImages.length}장 참조)` : '(신발 등록 필요)'}
+                        </button>
                     </div>
 
-                    {/* Color Change - only show when held */}
-                    {generatedContents.find(c => c.id === contextMenu.contentId)?.isHeld && (
-                        <div style={{ borderTop: `1px solid ${colors.borderSoft}`, padding: '8px 12px' }}>
-                            <div style={{ fontSize: 10, color: colors.textMuted, marginBottom: 6 }}>색상 변경 (AI)</div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                {[
-                                    { color: '#000000', name: '블랙' },
-                                    { color: '#FFFFFF', name: '화이트' },
-                                    { color: '#FF3B30', name: '레드' },
-                                    { color: '#007AFF', name: '블루' },
-                                    { color: '#34C759', name: '그린' },
-                                    { color: '#FF9500', name: '오렌지' },
-                                    { color: '#AF52DE', name: '퍼플' },
-                                    { color: '#8B4513', name: '브라운' }
-                                ].map(({ color, name }) => (
-                                    <button key={color} onClick={() => { alert(`${name} 색상으로 변경합니다.\nAI 연결 필요`); setContextMenu(prev => ({ ...prev, visible: false })); }}
-                                        style={{
-                                            width: 28, height: 28,
-                                            background: color,
-                                            border: color === '#FFFFFF' ? '1px solid #ddd' : 'none',
-                                            borderRadius: 6,
-                                            cursor: 'pointer',
-                                            boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-                                        }} title={name} />
-                                ))}
+                    {/* Color Change - now handled via RegionOverlay right-click */}
+                    {(() => {
+                        const heldContent = generatedContents.find(c => c.id === contextMenu.contentId);
+                        if (!heldContent?.isHeld || !heldContent.segmentation) return null;
+
+                        const regions = heldContent.segmentation.regions;
+                        if (regions.length === 0) return null;
+
+                        return (
+                            <div style={{ borderTop: `1px solid ${colors.borderSoft}`, padding: '8px 12px' }}>
+                                <div style={{ fontSize: 10, color: colors.textMuted }}>
+                                    부위 호버 → 우클릭으로 색상 변경
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        );
+                    })()}
 
                     <div style={{ borderTop: `1px solid ${colors.borderSoft}` }}>
                         <button
@@ -1533,6 +1896,20 @@ export default function ContentGeneratorApp() {
                     </div>
                 </div>
             )}
+
+            {/* Region Color Picker Popup */}
+            <ColorPickerPopup
+                visible={colorPickerState.visible}
+                x={colorPickerState.x}
+                y={colorPickerState.y}
+                region={colorPickerState.region}
+                onColorSelect={(colorName) => {
+                    if (colorPickerState.contentId && colorPickerState.region) {
+                        handleRegionColorChange(colorPickerState.contentId, colorPickerState.region, colorName);
+                    }
+                }}
+                onClose={() => setColorPickerState({ visible: false, x: 0, y: 0, contentId: null, region: null })}
+            />
         </div>
     );
 }
