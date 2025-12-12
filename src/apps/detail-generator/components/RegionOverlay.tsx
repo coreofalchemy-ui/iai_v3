@@ -66,13 +66,13 @@ export const RegionOverlay: React.FC<RegionOverlayProps> = ({
                 zIndex: 25
             }}
         >
-            {regions.map((region) => {
+            {regions.map((region, index) => {
                 const isHovered = hoveredRegion === region.type;
                 const isDragOver = dragOverRegion === region.type;
 
                 return (
                     <div
-                        key={region.type}
+                        key={`${region.type}-${index}`}
                         style={{
                             position: 'absolute',
                             left: `${region.bounds.x}%`,

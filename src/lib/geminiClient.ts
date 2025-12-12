@@ -1,14 +1,19 @@
 import { supabase } from './supabase';
+import { GoogleGenAI } from "@google/genai";
 
 /**
  * 🔐 보안 Gemini API 프록시
  * 
  * 이 모듈은 기존 코드의 GoogleGenAI 호출을 대체합니다.
- * 모든 API 요청은 서버리스 함수(/api/gemini)를 통해 처리되며,
- * API 키는 서버에서만 사용됩니다.
+ * - 배포 환경: 서버리스 함수(/api/gemini)를 통해 처리
+ * - 로컬 개발: 직접 GoogleGenAI SDK 사용
  */
 
 const API_ENDPOINT = '/api/gemini';
+const IS_LOCAL_DEV = typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+
 
 export interface GeminiImagePart {
     data: string;
@@ -19,6 +24,7 @@ export interface GeminiConfig {
     aspectRatio?: string;
     imageSize?: string;
     temperature?: number;
+    responseMimeType?: string;
 }
 
 export interface GeminiResponse {
@@ -45,6 +51,9 @@ export function extractBase64(dataUrl: string): GeminiImagePart {
  * Supabase 세션 토큰 가져오기
  */
 async function getAuthToken(): Promise<string> {
+    if (!supabase) {
+        throw new Error('AUTH_ERROR: Supabase 클라이언트가 초기화되지 않았습니다. (환경변수 확인 필요)');
+    }
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
         throw new Error('AUTH_ERROR: 로그인이 필요합니다.');
@@ -110,6 +119,8 @@ async function optimizeImage(base64Str: string, maxWidth = 1500): Promise<string
 
 /**
  * 🔐 보안 Gemini API 호출
+ * - 로컬 개발: 직접 GoogleGenAI SDK 사용
+ * - 배포 환경: 서버리스 함수(/api/gemini) 사용
  */
 export async function callGeminiSecure(
     prompt: string,
@@ -117,11 +128,95 @@ export async function callGeminiSecure(
     config?: GeminiConfig,
     systemInstruction?: string
 ): Promise<GeminiResponse> {
-    let token = '';
-    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (!isLocalDev) {
-        token = await getAuthToken();
+
+    // 이미지 최적화 적용
+    const optimizedImages = await Promise.all(images.map(async (img) => ({
+        ...img,
+        data: await optimizeImage(img.data)
+    })));
+
+    // 🏠 로컬 개발: 직접 GoogleGenAI 사용
+    if (IS_LOCAL_DEV) {
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+        if (!apiKey) {
+            console.error("❌ [geminiClient] VITE_GEMINI_API_KEY is missing in env!");
+            // 폴백 없이 에러 발생 (Supabase로 넘어가지 않음)
+            throw new Error("Local API Key Missing: .env 파일에 VITE_GEMINI_API_KEY를 설정해주세요.");
+        }
+
+        console.log('🏠 로컬 개발 모드: 직접 Gemini API 호출 (Key found)');
+
+        try {
+            const genAI = new GoogleGenAI({ apiKey });
+
+            // 이미지 파트 구성
+            const parts: any[] = [];
+            if (optimizedImages.length > 0) {
+                for (const img of optimizedImages) {
+                    parts.push({
+                        inlineData: {
+                            data: img.data,
+                            mimeType: img.mimeType,
+                        },
+                    });
+                }
+            }
+            parts.push({ text: prompt });
+
+            // 모델 설정 - Content Generator용
+            // gemini-2.5-flash: 텍스트 전용
+            // gemini-2.5-flash-image: 이미지 생성 (Nano Banana)
+            // gemini-3-pro-image-preview: 4K 업스케일링 전용 (비용 높음)
+            const MODEL_TEXT = 'gemini-2.5-flash';
+            const MODEL_IMAGE = 'gemini-2.5-flash-image';  // 이미지 생성용
+            const MODEL_UPSCALE = 'gemini-3-pro-image-preview';  // 4K 업스케일링 전용
+
+            const isImageGenRequest = config?.aspectRatio || config?.imageSize;
+            const is4KUpscale = config?.imageSize === '4K';
+
+            // 4K 업스케일링만 3.0 사용, 일반 이미지 생성은 2.5-flash-image 사용
+            const modelName = is4KUpscale ? MODEL_UPSCALE : (isImageGenRequest ? MODEL_IMAGE : MODEL_TEXT);
+
+            console.log(`🤖 모델: ${modelName}, 이미지 생성: ${!!isImageGenRequest}, 4K: ${is4KUpscale}`);
+
+            const response = await genAI.models.generateContent({
+                model: modelName,
+                contents: { parts },
+                config: isImageGenRequest ? {
+                    // @ts-ignore
+                    responseModalities: ['Text', 'Image'],
+                } : undefined,
+            });
+
+            // 응답 추출 (이미지 우선 탐색)
+            let textData = '';
+            for (const candidate of response.candidates || []) {
+                for (const part of candidate.content?.parts || []) {
+                    if (part.inlineData) {
+                        // 이미지가 발견되면 즉시 반환
+                        return { type: 'image', data: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` };
+                    } else if (part.text) {
+                        // 텍스트는 모아둠
+                        textData += part.text;
+                    }
+                }
+            }
+
+            // 이미지가 없고 텍스트만 있다면 텍스트 반환
+            if (textData) {
+                return { type: 'text', data: textData };
+            } return { type: 'text', data: '응답을 생성할 수 없습니다.' };
+
+        } catch (error: any) {
+            console.error('❌ 로컬 Gemini API 오류:', error);
+            throw new Error(error.message || 'Gemini API 오류');
+        }
     }
+
+    // 🌐 배포 환경: 서버리스 함수 사용
+    let token = '';
+    token = await getAuthToken();
 
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -130,14 +225,6 @@ export async function callGeminiSecure(
         headers['Authorization'] = `Bearer ${token}`;
     }
 
-    // 이미지 최적화 적용
-    const optimizedImages = await Promise.all(images.map(async (img) => ({
-        ...img,
-        data: await optimizeImage(img.data)
-    })));
-
-    // Determine modelType based on whether images are present OR if image generation config is detected
-    // If images are provided OR aspectRatio/imageSize is set, use image generation model
     const isImageGeneration = optimizedImages.length > 0 || config?.aspectRatio || config?.imageSize;
     const modelType = isImageGeneration ? 'image-std' : 'text';
 
@@ -149,21 +236,19 @@ export async function callGeminiSecure(
             images: optimizedImages,
             config,
             systemInstruction,
-            modelType, // Explicitly specify model type
+            modelType,
         }),
     });
 
     if (!response.ok) {
-        // Handle Errors Gracefully
         if ([429, 503, 500, 504].includes(response.status)) {
             console.warn(`⚠️ Gemini API Error (${response.status}). Returning Mock Data.`);
 
-            // JSON 요청인지 확인 (prompt나 config로 추론)
             const isJsonRequest = prompt.includes('JSON') || (config as any)?.responseMimeType === 'application/json';
 
             if (isJsonRequest) {
                 return {
-                    type: 'text', // JSON은 텍스트로 리턴
+                    type: 'text',
                     data: MOCK_ERROR_JSON
                 };
             }

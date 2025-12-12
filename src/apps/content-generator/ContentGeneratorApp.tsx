@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { bringModelToStudio, regenerateShoesOnly, expandToFullBody, generateFromCameraAngle, CameraAnglePosition, applyShoeFromMultipleReferences } from '../detail-generator/services/quickTransferService';
+import { bringModelToStudio, regenerateShoesOnly, generateFromCameraAngle, CameraAnglePosition, applyShoeFromMultipleReferences } from '../detail-generator/services/quickTransferService';
+import { synthesizeShoeStudio } from './services/shoeStudioService';
 import { detectClothingRegions, changeRegionColor, replaceRegionClothing, ClothingRegion, SegmentationResult } from '../detail-generator/services/modelSegmentationService';
 import { RegionOverlay, ColorPickerPopup } from '../detail-generator/components/RegionOverlay';
 import { FILTER_PRESETS, FilterPresetName, getFilterStyles } from '../detail-generator/services/photoFilterService';
@@ -85,6 +86,7 @@ export default function ContentGeneratorApp() {
     // Options
     const [useStudio, setUseStudio] = useState(false);
     const [use2K, setUse2K] = useState(false);
+    const [isBootsMode, setIsBootsMode] = useState(false); // 부츠 모드 - 니하이 부츠용
     const [isGenerating, setIsGenerating] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0, message: '' });
 
@@ -123,6 +125,19 @@ export default function ContentGeneratorApp() {
     // Current filter
     const [currentFilter, setCurrentFilter] = useState<FilterPresetName>('original');
 
+    // Image Expansion Mode
+    const [expandMode, setExpandMode] = useState<{
+        active: boolean;
+        contentId: string | null;
+        originalBounds: { x: number; y: number; width: number; height: number } | null;
+        expandBounds: { top: number; right: number; bottom: number; left: number };
+    }>({
+        active: false,
+        contentId: null,
+        originalBounds: null,
+        expandBounds: { top: 0, right: 0, bottom: 0, left: 0 }
+    });
+
     const modelInputRef = useRef<HTMLInputElement>(null);
     const shoeInputRef = useRef<HTMLInputElement>(null);
     const bgInputRef = useRef<HTMLInputElement>(null);
@@ -159,12 +174,13 @@ export default function ContentGeneratorApp() {
     }, [historyIndex]);
 
     // Canvas wheel zoom OR selected image scale adjustment (Alt + Wheel)
-    const handleCanvasWheel = useCallback((e: React.WheelEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        // Alt + Wheel: If exactly one image is selected, adjust that image's internal scale
+    // Canvas wheel zoom (Ctrl + Wheel) OR selected image scale adjustment (Alt + Wheel)
+    // Now handled via native event listener to support non-passive behavior (preventDefault)
+    const handleCanvasWheel = useCallback((e: WheelEvent) => {
+        // 1. Alt + Wheel: Image Scale (Existing)
         if (e.altKey && selectedContentIds.size === 1) {
+            e.preventDefault();
+            e.stopPropagation();
             const contentId = Array.from(selectedContentIds)[0];
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
 
@@ -179,26 +195,39 @@ export default function ContentGeneratorApp() {
             return;
         }
 
-        // Without Alt: zoom the canvas (Figma-style - centered on mouse position)
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (!rect) return;
+        // 2. Ctrl + Wheel: Canvas Zoom (NEW: Only active with Ctrl)
+        if (e.ctrlKey) {
+            e.preventDefault();
+            e.stopPropagation();
 
-        // Mouse position relative to canvas
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+            const rect = canvasRef.current?.getBoundingClientRect();
+            if (!rect) return;
 
-        // Calculate new zoom
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        const newZoom = Math.max(0.1, Math.min(5, canvasZoom + delta));
-        const zoomRatio = newZoom / canvasZoom;
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
 
-        // Adjust pan to keep mouse position as anchor point
-        const newPanX = mouseX - (mouseX - canvasPan.x) * zoomRatio;
-        const newPanY = mouseY - (mouseY - canvasPan.y) * zoomRatio;
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            const newZoom = Math.max(0.1, Math.min(5, canvasZoom + delta));
+            const zoomRatio = newZoom / canvasZoom;
 
-        setCanvasZoom(newZoom);
-        setCanvasPan({ x: newPanX, y: newPanY });
+            const newPanX = mouseX - (mouseX - canvasPan.x) * zoomRatio;
+            const newPanY = mouseY - (mouseY - canvasPan.y) * zoomRatio;
+
+            setCanvasZoom(newZoom);
+            setCanvasPan({ x: newPanX, y: newPanY });
+        }
     }, [canvasZoom, canvasPan, selectedContentIds, generatedContents]);
+
+    // Attach native non-passive listener to support e.preventDefault()
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        canvas.addEventListener('wheel', handleCanvasWheel, { passive: false });
+        return () => {
+            canvas.removeEventListener('wheel', handleCanvasWheel);
+        };
+    }, [handleCanvasWheel]);
 
     // Close context menu on click outside
     useEffect(() => {
@@ -324,16 +353,10 @@ export default function ContentGeneratorApp() {
 
                 let resultUrl: string;
 
-                if (useStudio) {
-                    // Studio mode: Use bringModelToStudio - unifies model+shoes tone
-                    resultUrl = await bringModelToStudio(modelUrl, shoeUrl, {
-                        resolution: resolution as '1K' | '4K',
-                        customBackgroundUrl: customBackground?.preview
-                    });
-                } else {
-                    // Just swap shoes without changing background
-                    resultUrl = await regenerateShoesOnly(modelUrl, shoeUrl, { resolution: resolution as '1K' | '2K' | '4K' });
-                }
+                // Unified Logic: Always use synthesizeShoeStudio
+                // synthesizeShoeStudio takes (shoeUrl, modelUrl, effect)
+                // We use 'minimal' effect as default for standard fitting
+                resultUrl = await synthesizeShoeStudio(shoeUrl, modelUrl, useStudio ? 'minimal' : 'minimal');
 
                 // Add to results with 1:1 square format
                 const size = 280;
@@ -517,23 +540,16 @@ export default function ContentGeneratorApp() {
             const dx = e.clientX - resizeState.startX;
             const dy = e.clientY - resizeState.startY;
 
-            if (shiftPressed) {
-                // Proportional resize
-                const delta = Math.max(dx, dy);
-                const newWidth = Math.max(100, resizeState.initialWidth + delta);
-                const ratio = resizeState.initialHeight / resizeState.initialWidth;
-                const newHeight = newWidth * ratio;
-                setGeneratedContents(prev => prev.map(c => c.id === resizeState.itemId
-                    ? { ...c, width: newWidth, height: newHeight }
-                    : c));
-            } else {
-                // Free resize
-                const newWidth = Math.max(100, resizeState.initialWidth + dx);
-                const newHeight = Math.max(100, resizeState.initialHeight + dy);
-                setGeneratedContents(prev => prev.map(c => c.id === resizeState.itemId
-                    ? { ...c, width: newWidth, height: newHeight }
-                    : c));
-            }
+            // 기본: 비율 유지하면서 크기 조정 (Shift 키와 동일하게)
+            // 항상 비율 유지
+            const delta = Math.max(dx, dy);
+            const newWidth = Math.max(100, resizeState.initialWidth + delta);
+            const ratio = resizeState.initialHeight / resizeState.initialWidth;
+            const newHeight = newWidth * ratio;
+
+            setGeneratedContents(prev => prev.map(c => c.id === resizeState.itemId
+                ? { ...c, width: newWidth, height: newHeight }
+                : c));
         }
     };
 
@@ -648,57 +664,55 @@ export default function ContentGeneratorApp() {
         setContextMenu(prev => ({ ...prev, visible: false }));
     };
 
-    // Auto-arrange images to fill screen with minimal empty space
+    // Auto-arrange images to fill screen from left to right
     const autoArrange = () => {
         if (generatedContents.length === 0) return;
 
         const canvasWidth = canvasRef.current?.clientWidth || 800;
         const canvasHeight = canvasRef.current?.clientHeight || 600;
-        const padding = 12;
-        const margin = 20;
+        // 현재 줌 레벨을 고려한 보이는 캔버스 영역 계산
+        const visibleWidth = canvasWidth / canvasZoom;
+        const visibleHeight = canvasHeight / canvasZoom;
+        const gap = 12; // 이미지 간 간격
 
-        // Calculate optimal number of columns based on image count
         const imageCount = generatedContents.length;
-        let cols: number;
 
-        if (imageCount <= 2) cols = imageCount;
-        else if (imageCount <= 4) cols = 2;
-        else if (imageCount <= 6) cols = 3;
-        else if (imageCount <= 9) cols = 3;
-        else cols = 4;
+        console.log(`📐 자동정렬: 줌 ${Math.round(canvasZoom * 100)}%, 보이는 영역: ${Math.round(visibleWidth)}x${Math.round(visibleHeight)}`);
 
-        const rows = Math.ceil(imageCount / cols);
-
-        // Calculate available space
-        const availableWidth = canvasWidth - (margin * 2) - (padding * (cols - 1));
-        const availableHeight = canvasHeight - (margin * 2) - (padding * (rows - 1));
-
-        // Calculate optimal size per cell (3:4 aspect ratio for fashion)
-        const cellWidth = Math.floor(availableWidth / cols);
-        const cellHeight = Math.floor(cellWidth * (4 / 3));
-
-        // If height overflows, recalculate based on height
-        const maxCellHeight = Math.floor(availableHeight / rows);
-        const finalCellHeight = Math.min(cellHeight, maxCellHeight);
-        const finalCellWidth = Math.floor(finalCellHeight * (3 / 4));
+        // 이미지들을 좌상단부터 배치 (사용자가 지정한 사이즈 유지, 위치만 변경)
+        let currentX = gap;
+        let currentY = gap;
+        let rowHeight = 0;
 
         const newContents = generatedContents.map((c, index) => {
-            const col = index % cols;
-            const row = Math.floor(index / cols);
+            // 현재 행에서 다음 이미지가 넘치면 다음 행으로 (보이는 영역 기준)
+            if (currentX + c.width > visibleWidth - gap && index > 0) {
+                currentX = gap;
+                currentY += rowHeight + gap;
+                rowHeight = 0;
+            }
+
+            const newX = currentX;
+            const newY = currentY;
+
+            // 이 행의 최대 높이 기록
+            rowHeight = Math.max(rowHeight, c.height);
+
+            // 다음 이미지 X 위치
+            currentX += c.width + gap;
 
             return {
                 ...c,
-                width: finalCellWidth,
-                height: finalCellHeight,
-                x: margin + col * (finalCellWidth + padding),
-                y: margin + row * (finalCellHeight + padding)
+                x: newX,
+                y: newY
+                // width, height는 변경하지 않음 - 사용자 지정 사이즈 유지
             };
         });
 
         setGeneratedContents(newContents);
         saveToHistory(newContents);
 
-        // Reset canvas to show all images
+        // 뷰포트 리셋 (좌상단으로 이동)
         setCanvasPan({ x: 0, y: 0 });
         setCanvasZoom(1);
     };
@@ -762,6 +776,14 @@ export default function ContentGeneratorApp() {
     };
 
     // ==================== Hold Feature (Clothing/Color Change) ====================
+    // Default fallback regions when AI analysis fails - based on typical fashion model proportions
+    const FALLBACK_REGIONS: ClothingRegion[] = [
+        { type: 'top', label: '상의', confidence: 0.8, bounds: { x: 15, y: 10, width: 70, height: 28 } },
+        { type: 'bottom', label: '하의', confidence: 0.8, bounds: { x: 15, y: 40, width: 70, height: 38 } },
+        { type: 'socks', label: '양말', confidence: 0.7, bounds: { x: 25, y: 78, width: 50, height: 6 } },
+        { type: 'shoes', label: '신발', confidence: 0.8, bounds: { x: 22, y: 84, width: 56, height: 14 } }
+    ];
+
     const toggleHold = async (contentId: string) => {
         const content = generatedContents.find(c => c.id === contentId);
         if (!content) return;
@@ -769,7 +791,7 @@ export default function ContentGeneratorApp() {
         if (content.isHeld) {
             // Release hold
             const newContents = generatedContents.map(c =>
-                c.id === contentId ? { ...c, isHeld: false } : c
+                c.id === contentId ? { ...c, isHeld: false, segmentation: undefined } : c
             );
             setGeneratedContents(newContents);
             saveToHistory(newContents);
@@ -784,15 +806,31 @@ export default function ContentGeneratorApp() {
                 setProgress({ current: 1, total: 1, message: '🔍 모델 분석 중...' });
                 const segResult = await detectClothingRegions(content.url);
 
+                // Use fallback regions if AI returns empty
+                const finalRegions = (segResult.regions && segResult.regions.length > 0)
+                    ? segResult.regions
+                    : FALLBACK_REGIONS;
+
+                const finalSegmentation = {
+                    ...segResult,
+                    regions: finalRegions
+                };
+
                 // Update with analysis result
                 setGeneratedContents(prev => prev.map(c =>
-                    c.id === contentId ? { ...c, isAnalyzing: false, segmentation: segResult } : c
+                    c.id === contentId ? { ...c, isAnalyzing: false, segmentation: finalSegmentation } : c
                 ));
-                console.log('✅ 분석 완료:', segResult.regions);
+                console.log('✅ 분석 완료:', finalRegions.length, '개 영역 (fallback:', segResult.regions?.length === 0, ')');
             } catch (error) {
-                console.error('분석 실패:', error);
+                console.error('분석 실패, fallback 사용:', error);
+                // Use fallback regions even on error
+                const fallbackSeg = {
+                    regions: FALLBACK_REGIONS,
+                    imageWidth: 100,
+                    imageHeight: 100
+                };
                 setGeneratedContents(prev => prev.map(c =>
-                    c.id === contentId ? { ...c, isAnalyzing: false } : c
+                    c.id === contentId ? { ...c, isAnalyzing: false, segmentation: fallbackSeg } : c
                 ));
             } finally {
                 setProgress({ current: 0, total: 0, message: '' });
@@ -892,17 +930,22 @@ export default function ContentGeneratorApp() {
     // Camera angle positions (8 dots)
     // 상단 4개: 전신 뷰, 하단 4개: 하반신(다리) 클로즈업
     // Outer = 완전 측면(90도), Inner = 사선(45도)
+    // 사용자 기준: UI 왼쪽 클릭 = 모델의 오른쪽 촬영, UI 오른쪽 클릭 = 모델의 왼쪽 촬영
     const CAMERA_ANGLE_DOTS: { angle: CameraAnglePosition; label: string; x: string; y: string }[] = [
         // 상단 - 전신 뷰 (y: 25%)
-        { angle: 'fullbody_left_outer', label: '전신 좌측 (측면)', x: '5%', y: '25%' },
-        { angle: 'fullbody_left_inner', label: '전신 좌측 (사선)', x: '15%', y: '25%' },
-        { angle: 'fullbody_right_outer', label: '전신 우측 (측면)', x: '95%', y: '25%' },
-        { angle: 'fullbody_right_inner', label: '전신 우측 (사선)', x: '85%', y: '25%' },
+        // UI 왼쪽 (x: 5%, 15%) → 모델 오른쪽 촬영
+        { angle: 'fullbody_right_outer', label: '◀ 우측 측면', x: '5%', y: '25%' },
+        { angle: 'fullbody_right_inner', label: '◀ 우측 사선', x: '15%', y: '25%' },
+        // UI 오른쪽 (x: 85%, 95%) → 모델 왼쪽 촬영
+        { angle: 'fullbody_left_outer', label: '좌측 측면 ▶', x: '95%', y: '25%' },
+        { angle: 'fullbody_left_inner', label: '좌측 사선 ▶', x: '85%', y: '25%' },
         // 하단 - 하반신(다리) 클로즈업 (y: 70%)
-        { angle: 'legs_left_outer', label: '다리 좌측 (측면)', x: '5%', y: '70%' },
-        { angle: 'legs_left_inner', label: '다리 좌측 (사선)', x: '15%', y: '70%' },
-        { angle: 'legs_right_outer', label: '다리 우측 (측면)', x: '95%', y: '70%' },
-        { angle: 'legs_right_inner', label: '다리 우측 (사선)', x: '85%', y: '70%' },
+        // UI 왼쪽 (x: 5%, 15%) → 모델 오른쪽 촬영
+        { angle: 'legs_right_outer', label: '◀ 다리 우측', x: '5%', y: '70%' },
+        { angle: 'legs_right_inner', label: '◀ 다리 우측 사선', x: '15%', y: '70%' },
+        // UI 오른쪽 (x: 85%, 95%) → 모델 왼쪽 촬영
+        { angle: 'legs_left_outer', label: '다리 좌측 ▶', x: '95%', y: '70%' },
+        { angle: 'legs_left_inner', label: '다리 좌측 사선 ▶', x: '85%', y: '70%' },
     ];
 
     // Handle camera angle dot click
@@ -930,6 +973,8 @@ export default function ContentGeneratorApp() {
                 const newContents = [...generatedContents, newContent];
                 setGeneratedContents(newContents);
                 saveToHistory(newContents);
+                // 자동 정렬 호출
+                setTimeout(() => autoArrange(), 100);
             };
             img.src = result.startsWith('data:') ? result : `data:image/png;base64,${result}`;
         } catch (error) {
@@ -980,45 +1025,84 @@ export default function ContentGeneratorApp() {
         reader.readAsDataURL(file);
     };
 
-    // ==================== Image Expansion (Outpainting) ====================
-    const expandImage = async () => {
-        if (selectedContentIds.size !== 1) {
-            alert('확장할 이미지 1개를 선택해주세요.');
-            return;
-        }
-
-        const contentId = Array.from(selectedContentIds)[0];
+    // ==================== Image Expansion Mode ====================
+    const startExpansionMode = (contentId: string) => {
         const content = generatedContents.find(c => c.id === contentId);
         if (!content) return;
 
+        setExpandMode({
+            active: true,
+            contentId,
+            originalBounds: { x: content.x, y: content.y, width: content.width, height: content.height },
+            expandBounds: { top: 0, right: 0, bottom: 0, left: 0 }
+        });
+        setContextMenu(prev => ({ ...prev, visible: false }));
+    };
+
+    const handleExpandDrag = (direction: 'top' | 'right' | 'bottom' | 'left', delta: number) => {
+        setExpandMode(prev => ({
+            ...prev,
+            expandBounds: {
+                ...prev.expandBounds,
+                [direction]: Math.max(0, delta)
+            }
+        }));
+    };
+
+    const cancelExpansionMode = () => {
+        setExpandMode({
+            active: false,
+            contentId: null,
+            originalBounds: null,
+            expandBounds: { top: 0, right: 0, bottom: 0, left: 0 }
+        });
+    };
+
+    const executeExpansion = async () => {
+        if (!expandMode.contentId || !expandMode.originalBounds) return;
+
+        const content = generatedContents.find(c => c.id === expandMode.contentId);
+        if (!content) return;
+
+        const { top, right, bottom, left } = expandMode.expandBounds;
+        if (top === 0 && right === 0 && bottom === 0 && left === 0) {
+            cancelExpansionMode();
+            return;
+        }
+
         try {
-            setProgress({ current: 1, total: 1, message: '🔄 전신 확장 중... (AI 분석 및 생성)' });
             setIsGenerating(true);
+            setProgress({ current: 1, total: 1, message: '🔲 이미지 확장 중...' });
 
-            // Use dedicated expandToFullBody for proper outpainting
-            const result = await expandToFullBody(
-                content.url,
-                { resolution: use2K ? '2K' : '1K' }
-            );
+            // Import the expansion function
+            const { expandImageAuto } = await import('../detail-generator/services/quickTransferService');
 
-            // Add expanded image as new content
-            const img = new Image();
-            img.onload = () => {
-                const newContent: GeneratedContent = {
-                    id: `expanded-${Date.now()}`,
-                    url: result,
-                    width: Math.min(img.width, 400),
-                    height: Math.min(img.height, 600),
-                    x: content.x + content.width + 20,
-                    y: content.y
-                };
-                const newContents = [...generatedContents, newContent];
-                setGeneratedContents(newContents);
-                saveToHistory(newContents);
-                setSelectedContentIds(new Set([newContent.id]));
+            const result = await expandImageAuto(content.url, {
+                expandTop: top,
+                expandRight: right,
+                expandBottom: bottom,
+                expandLeft: left,
+                resolution: use2K ? '2K' : '1K'
+            });
+
+            // 신규 이미지로 출력 (기존 이미지 옆에 추가)
+            const newWidth = content.width + left + right;
+            const newHeight = content.height + top + bottom;
+
+            const newContent: GeneratedContent = {
+                id: `expand-${Date.now()}`,
+                url: result.startsWith('data:') ? result : `data:image/png;base64,${result}`,
+                width: newWidth,
+                height: newHeight,
+                x: content.x + content.width + 20,  // 기존 이미지 오른쪽에 배치
+                y: content.y
             };
-            img.src = result;
 
+            const newContents = [...generatedContents, newContent];
+            setGeneratedContents(newContents);
+            saveToHistory(newContents);
+
+            cancelExpansionMode();
         } catch (error) {
             console.error('이미지 확장 실패:', error);
             alert('이미지 확장 중 오류가 발생했습니다.');
@@ -1067,6 +1151,8 @@ export default function ContentGeneratorApp() {
                 setGeneratedContents(newContents);
                 saveToHistory(newContents);
                 setSelectedContentIds(new Set([newContent.id]));
+                // 자동 정렬 호출
+                setTimeout(() => autoArrange(), 100);
             };
             img.src = result.startsWith('data:') ? result : `data:image/png;base64,${result}`;
 
@@ -1188,9 +1274,17 @@ export default function ContentGeneratorApp() {
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
-                    onWheel={handleCanvasWheel}
+                    // onWheel removed - handled by native listener
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={handleCanvasDrop}>
+
+                    {/* Infinite Grid Background - Moved OUTSIDE scale wrapper */}
+                    <div className="canvas-grid absolute inset-0 pointer-events-none" style={{
+                        backgroundImage: `radial-gradient(${colors.borderSoft} 1px, transparent 1px)`,
+                        backgroundSize: `${32 * canvasZoom}px ${32 * canvasZoom}px`,
+                        backgroundPosition: `${canvasPan.x}px ${canvasPan.y}px`,
+                        opacity: 0.8
+                    }} />
 
                     {/* Zoom/Pan Transform Wrapper */}
                     <div className="canvas-content" style={{
@@ -1200,11 +1294,7 @@ export default function ContentGeneratorApp() {
                         height: '2000px',
                         position: 'relative'
                     }}>
-                        {/* Subtle Grid */}
-                        <div className="canvas-grid absolute inset-0 pointer-events-none" style={{
-                            backgroundImage: `radial-gradient(${colors.borderSoft} 1px, transparent 1px)`,
-                            backgroundSize: '32px 32px'
-                        }} />
+                        {/* Grid moved to parent for infinite effect */}
 
                         {/* Progress Indicator */}
                         {isGenerating && (
@@ -1247,7 +1337,7 @@ export default function ContentGeneratorApp() {
                                         boxShadow: isHeld ? '0 8px 30px rgba(255,59,48,0.3)' : (isSelected ? '0 8px 30px rgba(59,130,246,0.2)' : '0 4px 12px rgba(0,0,0,0.06)'),
                                         ...(filterStyles?.containerStyle || {})
                                     }}
-                                    className="absolute cursor-move transition-shadow duration-200"
+                                    className={`absolute transition-shadow duration-200 ${isHeld ? 'cursor-default' : 'cursor-move'}`}
                                     onClick={(e) => handleContentClick(e, content.id)}
                                     onMouseDown={(e) => handleContentMouseDown(e, content.id)}
                                     onContextMenu={(e) => handleContextMenu(e, content.id)}
@@ -1277,7 +1367,6 @@ export default function ContentGeneratorApp() {
                                             }}>
                                                 {content.isAnalyzing ? '🔍 분석중...' : '🔒 HOLD'}
                                             </div>
-
                                             {/* Drop zone border */}
                                             <div style={{
                                                 position: 'absolute',
@@ -1287,28 +1376,6 @@ export default function ContentGeneratorApp() {
                                                 pointerEvents: 'none',
                                                 zIndex: 5
                                             }} />
-
-                                            {/* Region Overlay - shows interactive clothing regions */}
-                                            {content.segmentation && content.segmentation.regions.length > 0 && (
-                                                <RegionOverlay
-                                                    regions={content.segmentation.regions}
-                                                    isActive={true}
-                                                    containerWidth={content.width}
-                                                    containerHeight={content.height}
-                                                    onRegionRightClick={(region, e) => {
-                                                        setColorPickerState({
-                                                            visible: true,
-                                                            x: e.clientX,
-                                                            y: e.clientY,
-                                                            contentId: content.id,
-                                                            region
-                                                        });
-                                                    }}
-                                                    onRegionDrop={(region, file) => {
-                                                        handleRegionClothingDrop(content.id, region, file);
-                                                    }}
-                                                />
-                                            )}
 
                                         </>
                                     )}
@@ -1384,6 +1451,7 @@ export default function ContentGeneratorApp() {
                                             src={content.url}
                                             alt=""
                                             draggable={false}
+                                            loading="lazy"
                                             style={{
                                                 width: '100%',
                                                 height: '100%',
@@ -1402,6 +1470,28 @@ export default function ContentGeneratorApp() {
                                             <div style={filterStyles.grainStyle} />
                                             <div style={filterStyles.glowStyle} />
                                         </>
+                                    )}
+
+                                    {/* Region Overlay - MUST BE AFTER image for correct z-index stacking */}
+                                    {isHeld && content.segmentation && content.segmentation.regions.length > 0 && (
+                                        <RegionOverlay
+                                            regions={content.segmentation.regions}
+                                            isActive={true}
+                                            containerWidth={content.width}
+                                            containerHeight={content.height}
+                                            onRegionRightClick={(region, e) => {
+                                                setColorPickerState({
+                                                    visible: true,
+                                                    x: e.clientX,
+                                                    y: e.clientY,
+                                                    contentId: content.id,
+                                                    region
+                                                });
+                                            }}
+                                            onRegionDrop={(region, file) => {
+                                                handleRegionClothingDrop(content.id, region, file);
+                                            }}
+                                        />
                                     )}
 
                                     {/* Platform label (always visible) */}
@@ -1466,7 +1556,7 @@ export default function ContentGeneratorApp() {
                                             {/* Hint */}
                                             <div style={{ background: colors.accentBlue, fontSize: 9, padding: '2px 6px' }}
                                                 className="absolute bottom-2 left-2 text-white">
-                                                {shiftPressed ? '비율 유지' : '↕↔ 드래그로 이동'}
+                                                비율 유지 리사이즈
                                             </div>
                                         </>
                                     )}
@@ -1550,8 +1640,8 @@ export default function ContentGeneratorApp() {
                             ) : (
                                 <div className="grid grid-cols-5 gap-1.5">
                                     {modelImages.map(m => (
-                                        <div key={m.id} className="relative group aspect-square">
-                                            <img src={m.preview} alt="" className="w-full h-full object-cover rounded-md" />
+                                        <div key={m.id} className="relative group aspect-square" style={{ width: 48, height: 48 }}>
+                                            <img src={m.preview} alt="" loading="lazy" width={48} height={48} className="w-full h-full object-cover rounded-md" />
                                             <button onClick={(e) => { e.stopPropagation(); removeModel(m.id); }}
                                                 style={{ background: '#FF3B30' }} className="absolute -top-1 -right-1 w-4 h-4 text-white rounded-full text-xs opacity-0 group-hover:opacity-100">×</button>
                                         </div>
@@ -1599,8 +1689,8 @@ export default function ContentGeneratorApp() {
                             ) : (
                                 <div className="grid grid-cols-5 gap-1.5">
                                     {shoeImages.map(s => (
-                                        <div key={s.id} className="relative group aspect-square">
-                                            <img src={s.preview} alt="" className="w-full h-full object-cover rounded-md" />
+                                        <div key={s.id} className="relative group aspect-square" style={{ width: 48, height: 48 }}>
+                                            <img src={s.preview} alt="" loading="lazy" width={48} height={48} className="w-full h-full object-cover rounded-md" />
                                             <button onClick={(e) => { e.stopPropagation(); removeShoe(s.id); }}
                                                 style={{ background: '#FF3B30' }} className="absolute -top-1 -right-1 w-4 h-4 text-white rounded-full text-xs opacity-0 group-hover:opacity-100">×</button>
                                         </div>
@@ -1608,6 +1698,17 @@ export default function ContentGeneratorApp() {
                                 </div>
                             )}
                         </div>
+
+                        {/* Boots Mode Toggle */}
+                        <label className="flex items-center gap-3 cursor-pointer mt-3">
+                            <div onClick={() => setIsBootsMode(!isBootsMode)}
+                                style={{ width: 18, height: 18, borderRadius: 4, background: isBootsMode ? '#8B4513' : colors.bgSubtle, border: `1px solid ${colors.borderSoft}` }}
+                                className="flex items-center justify-center">
+                                {isBootsMode && <span className="text-white text-xs">✓</span>}
+                            </div>
+                            <span style={{ fontSize: 12, fontWeight: 500, color: colors.textPrimary }}>🥾 부츠 모드</span>
+                            <span style={{ fontSize: 10, color: colors.textMuted }}>(니하이 부츠)</span>
+                        </label>
                     </div>
 
                     {/* Options */}
@@ -1681,35 +1782,6 @@ export default function ContentGeneratorApp() {
                         </div>
                         <p style={{ fontSize: 10, color: colors.textMuted, marginTop: 8 }}>
                             {selectedContentIds.size > 0 ? `${selectedContentIds.size}개 선택됨` : '이미지 선택 후 필터 적용'}
-                        </p>
-                    </div>
-
-                    {/* Image Expansion */}
-                    <div style={{ background: colors.bgSurface, borderRadius: 12, margin: 12, marginBottom: 0 }} className="p-4">
-                        <h3 style={{ fontSize: 11, fontWeight: 600, color: colors.textSecondary, letterSpacing: '0.06em' }} className="uppercase mb-3">확장하기</h3>
-                        <button
-                            onClick={expandImage}
-                            disabled={selectedContentIds.size !== 1 || isGenerating}
-                            style={{
-                                width: '100%',
-                                padding: '12px',
-                                background: selectedContentIds.size === 1 ? '#10B981' : colors.bgSubtle,
-                                color: selectedContentIds.size === 1 ? '#fff' : colors.textMuted,
-                                border: 'none',
-                                borderRadius: 8,
-                                fontSize: 13,
-                                fontWeight: 600,
-                                cursor: selectedContentIds.size === 1 ? 'pointer' : 'not-allowed',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: 8
-                            }}
-                        >
-                            📐 전신 확장 (AI)
-                        </button>
-                        <p style={{ fontSize: 10, color: colors.textMuted, marginTop: 8, lineHeight: 1.5 }}>
-                            잘린 모델 사진을 선택 후 확장하면<br />AI가 전신이 보이도록 확장합니다
                         </p>
                     </div>
 
@@ -1814,6 +1886,26 @@ export default function ContentGeneratorApp() {
                         >
                             {generatedContents.find(c => c.id === contextMenu.contentId)?.showCameraView ? '📷 카메라 뷰 끄기' : '📷 카메라 뷰'}
                         </button>
+                        {/* 이미지 확장 버튼 */}
+                        <button
+                            onClick={() => {
+                                if (contextMenu.contentId) startExpansionMode(contextMenu.contentId);
+                            }}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                width: '100%',
+                                padding: '10px 12px',
+                                fontSize: 13,
+                                color: colors.textPrimary,
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            🔲 이미지 확장
+                        </button>
                         {/* 신발 착화 버튼 */}
                         <button
                             onClick={() => {
@@ -1910,6 +2002,161 @@ export default function ContentGeneratorApp() {
                 }}
                 onClose={() => setColorPickerState({ visible: false, x: 0, y: 0, contentId: null, region: null })}
             />
+
+            {/* Expansion Mode Overlay */}
+            {expandMode.active && expandMode.contentId && expandMode.originalBounds && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.5)',
+                        zIndex: 9999,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}
+                    onClick={(e) => { if (e.target === e.currentTarget) cancelExpansionMode(); }}
+                >
+                    {/* Control Panel */}
+                    <div style={{
+                        position: 'absolute',
+                        top: 20,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: colors.bgSurface,
+                        borderRadius: 12,
+                        padding: '12px 20px',
+                        display: 'flex',
+                        gap: 16,
+                        alignItems: 'center',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
+                    }}>
+                        <span style={{ fontSize: 14, fontWeight: 600 }}>🔲 이미지 확장</span>
+                        <span style={{ fontSize: 12, color: colors.textMuted }}>핸들을 드래그하여 확장 영역 설정</span>
+                        <button
+                            onClick={executeExpansion}
+                            disabled={isGenerating}
+                            style={{
+                                background: colors.accentPrimary,
+                                color: 'white',
+                                border: 'none',
+                                padding: '8px 16px',
+                                borderRadius: 8,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                cursor: isGenerating ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            {isGenerating ? '확장 중...' : '확장 실행'}
+                        </button>
+                        <button
+                            onClick={cancelExpansionMode}
+                            style={{
+                                background: 'transparent',
+                                color: colors.textSecondary,
+                                border: `1px solid ${colors.borderSoft}`,
+                                padding: '8px 16px',
+                                borderRadius: 8,
+                                fontSize: 13,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            취소 (ESC)
+                        </button>
+                    </div>
+
+                    {/* Image with Expansion Handles */}
+                    <div style={{ position: 'relative' }}>
+                        {/* Expansion Preview Box */}
+                        <div style={{
+                            position: 'absolute',
+                            top: -expandMode.expandBounds.top,
+                            left: -expandMode.expandBounds.left,
+                            width: expandMode.originalBounds.width + expandMode.expandBounds.left + expandMode.expandBounds.right,
+                            height: expandMode.originalBounds.height + expandMode.expandBounds.top + expandMode.expandBounds.bottom,
+                            border: '2px dashed #3B82F6',
+                            borderRadius: 8,
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            pointerEvents: 'none'
+                        }} />
+
+                        {/* Original Image */}
+                        <img
+                            src={generatedContents.find(c => c.id === expandMode.contentId)?.url}
+                            alt=""
+                            style={{
+                                width: expandMode.originalBounds.width,
+                                height: expandMode.originalBounds.height,
+                                objectFit: 'cover',
+                                borderRadius: 8
+                            }}
+                        />
+
+                        {/* Drag Handles */}
+                        {(['top', 'right', 'bottom', 'left'] as const).map(dir => (
+                            <div
+                                key={dir}
+                                style={{
+                                    position: 'absolute',
+                                    ...(dir === 'top' && { top: -expandMode.expandBounds.top - 16, left: '50%', transform: 'translateX(-50%)' }),
+                                    ...(dir === 'bottom' && { bottom: -expandMode.expandBounds.bottom - 16, left: '50%', transform: 'translateX(-50%)' }),
+                                    ...(dir === 'left' && { left: -expandMode.expandBounds.left - 16, top: '50%', transform: 'translateY(-50%)' }),
+                                    ...(dir === 'right' && { right: -expandMode.expandBounds.right - 16, top: '50%', transform: 'translateY(-50%)' }),
+                                    width: dir === 'top' || dir === 'bottom' ? 60 : 24,
+                                    height: dir === 'top' || dir === 'bottom' ? 24 : 60,
+                                    background: '#3B82F6',
+                                    borderRadius: 6,
+                                    cursor: dir === 'top' || dir === 'bottom' ? 'ns-resize' : 'ew-resize',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'white',
+                                    fontSize: 14,
+                                    fontWeight: 700
+                                }}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    const startPos = dir === 'top' || dir === 'bottom' ? e.clientY : e.clientX;
+                                    const startValue = expandMode.expandBounds[dir];
+
+                                    const handleMouseMove = (moveE: MouseEvent) => {
+                                        const currentPos = dir === 'top' || dir === 'bottom' ? moveE.clientY : moveE.clientX;
+                                        let delta = dir === 'top' || dir === 'left'
+                                            ? startPos - currentPos + startValue
+                                            : currentPos - startPos + startValue;
+                                        handleExpandDrag(dir, Math.max(0, delta));
+                                    };
+
+                                    const handleMouseUp = () => {
+                                        document.removeEventListener('mousemove', handleMouseMove);
+                                        document.removeEventListener('mouseup', handleMouseUp);
+                                    };
+
+                                    document.addEventListener('mousemove', handleMouseMove);
+                                    document.addEventListener('mouseup', handleMouseUp);
+                                }}
+                            >
+                                {dir === 'top' ? '↑' : dir === 'bottom' ? '↓' : dir === 'left' ? '←' : '→'}
+                            </div>
+                        ))}
+
+                        {/* Expansion Values */}
+                        <div style={{
+                            position: 'absolute',
+                            bottom: -40,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,0.8)',
+                            color: 'white',
+                            padding: '4px 12px',
+                            borderRadius: 6,
+                            fontSize: 11
+                        }}>
+                            상:{expandMode.expandBounds.top} 우:{expandMode.expandBounds.right} 하:{expandMode.expandBounds.bottom} 좌:{expandMode.expandBounds.left}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
