@@ -141,14 +141,44 @@ export async function generatePoseVariation(
     if (type === 'closeup') {
         console.log(`🦵 Generating closeup with pose: ${pose.description}`);
 
-        // 클로즈업 컷 - 복사 명령
-        const closeupPrompt = `Copy this photo exactly. Only change the leg/feet pose to: "${pose.description}"
+        // 클로즈업 컷 - 색상 보존 강화 프롬프트
+        const closeupPrompt = `🚨 MANDATORY REQUIREMENTS - READ FIRST 🚨
 
-Same person. Same clothes. Same shoes. Same colors. Same everything.`;
+COLOR RULE: EXACT MATCH to source image.
+⚠️ NO filters. NO color grading. NO tone changes. NO desaturation.
+⚠️ If output colors differ from source = FAILURE.
+
+---
+
+TASK: Copy this photo exactly. Only change the leg/feet pose to: "${pose.description}"
+
+[🔒 COLOR PRESERVATION - CRITICAL - NO FILTER]
+1. **EXACT COLOR MATCH**: Copy the EXACT colors from source image.
+2. **NO FILTERS**: Do NOT apply any color grading, filters, or tonal adjustments.
+3. **NO DESATURATION**: Maintain full color saturation as in source.
+4. **NO WARMING/COOLING**: Do not shift color temperature.
+5. **SAME BRIGHTNESS**: Match exact brightness and contrast levels.
+6. **SAME TEXTURE**: Preserve fabric and skin textures exactly as source.
+7. COLOR MISMATCH OR FILTER EFFECT = FAILURE
+
+PRESERVE FROM SOURCE (CRITICAL):
+- Same person (exact face, skin tone, body type)
+- Same clothes (exact color, fabric texture)
+- Same shoes (exact design, color, material)
+- Same background
+- Same lighting direction
+- SAME COLORS - NO FILTER!
+
+QUALITY:
+- Photorealistic, 8K, ultra-sharp
+- No blur, no haze
+- Natural photography look
+
+REFERENCE: [Source Image]`;
 
         const result = await callGeminiSecure(
             closeupPrompt,
-            [{ data: base64, mimeType: 'image/jpeg' }],
+            [{ data: base64, mimeType: 'image/png' }],
             { aspectRatio: '3:4' }
         );
 
@@ -164,18 +194,52 @@ Same person. Same clothes. Same shoes. Same colors. Same everything.`;
     }
 
     // 전신은 자세만 변경
-    // 풀바디는 자세만 변경, 나머지 동일
+    // 풀바디는 자세만 변경, 나머지 동일
 
-    // 모델 컷 자세
-    // 전신은 자세만 변경
-    const fullBodyPrompt = `Copy this photo exactly. Only change the full body pose to: "${pose.description}"
+    // 모델 컷 자세 - 색상 보존 강화 프롬프트
+    const fullBodyPrompt = `🚨 MANDATORY REQUIREMENTS - READ FIRST 🚨
 
-Same person. Same clothes. Same shoes. Same colors. Same everything.`;
+COLOR RULE: EXACT MATCH to source image.
+⚠️ NO filters. NO color grading. NO tone changes. NO desaturation.
+⚠️ If output colors differ from source = FAILURE.
+
+---
+
+TASK: Copy this photo exactly. Only change the full body pose to: "${pose.description}"
+
+[🔒 COLOR PRESERVATION - CRITICAL - NO FILTER]
+1. **EXACT COLOR MATCH**: Copy the EXACT colors from source image.
+2. **NO FILTERS**: Do NOT apply any color grading, filters, or tonal adjustments.
+3. **NO DESATURATION**: Maintain full color saturation as in source.
+4. **NO WARMING/COOLING**: Do not shift color temperature.
+5. **SAME BRIGHTNESS**: Match exact brightness and contrast levels.
+6. **SAME TEXTURE**: Preserve fabric and skin textures exactly as source.
+7. COLOR MISMATCH OR FILTER EFFECT = FAILURE
+
+[CRITICAL FRAMING RULES]
+1. **FULL BODY**: Must be full-body shot. Head to toe.
+2. **NO CROPPING**: Do not cut off head or feet.
+3. **IDENTITY PRESERVATION**: Face and identity must remain exact.
+
+PRESERVE FROM SOURCE (CRITICAL):
+- Same person (exact face, identity, skin tone)
+- Same clothes (exact color, fabric texture)
+- Same shoes (exact design, color, material)
+- Same background
+- Same lighting direction
+- SAME COLORS - NO FILTER!
+
+QUALITY:
+- Photorealistic, 8K, ultra-sharp
+- No blur, no haze
+- Natural photography look
+
+REFERENCE: [Source Image]`;
 
     const result = await callGeminiSecure(
         fullBodyPrompt,
-        [{ data: base64, mimeType: 'image/jpeg' }],
-        { aspectRatio: '4:3' }
+        [{ data: base64, mimeType: 'image/png' }],
+        { aspectRatio: '3:4' }
     );
 
     if (result.type !== 'image') {

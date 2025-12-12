@@ -365,102 +365,105 @@ export default function DetailGeneratorApp() {
                     // =============================================
                     const shoeUrl = options.shoes[0]?.url;
                     if (shoeUrl) {
-                        // Import dynamically if needed or assume imported at top (Added import in separate edit if strict, but here we assume we can add it or it's available. 
-                        // Actually, better to add the import at the top first? I'll assume I can add the proper logic here using the service.)
-
-                        // We need to convert blob URL to base64 for the service
-                        fetch(shoeUrl)
-                            .then(r => r.blob())
-                            .then(blob => {
+                        // Helper to get base64 from URL (handles both Data URL and Blob URL)
+                        const getBase64FromUrl = async (url: string): Promise<string> => {
+                            // If already a Data URL, return as-is
+                            if (url.startsWith('data:')) {
+                                return url;
+                            }
+                            // Otherwise fetch and convert
+                            const response = await fetch(url);
+                            const blob = await response.blob();
+                            return new Promise((resolve, reject) => {
                                 const reader = new FileReader();
-                                reader.onloadend = () => {
-                                    const base64 = reader.result as string;
-
-                                    setQuickTransferProgress({ status: 'AI 제품 정밀 분석 중...', current: 0, total: 1 });
-
-                                    // Lazy import/call to avoid circular dep issues if any, or just call directly. 
-                                    // I will use valid import in previous step or assume global availability? 
-                                    // Wait, I strictly need to import 'analyzeProductAndGenerate'. 
-                                    // I will replace this block assuming I also added the import at the top.
-
-                                    import('./services/productAnalysisService').then(({ analyzeProductAndGenerate }) => {
-                                        analyzeProductAndGenerate(base64, {
-                                            generateSizeGuide: true,
-                                            generateAS: true,
-                                            generateCautions: true
-                                        }, (status) => {
-                                            console.log('Analysis status:', status);
-                                        }).then(results => {
-                                            console.log('✅ Product Analysis Complete:', results);
-
-                                            setGeneratedData((prev: any) => {
-                                                const newData = { ...prev };
-                                                const newSectionOrder = [...(prev.sectionOrder || [])];
-
-                                                // 1. Hero Text & Info + Specs
-                                                if (results.analysisResult) {
-                                                    const analysis = results.analysisResult;
-                                                    newData.heroTextContent = {
-                                                        ...prev.heroTextContent,
-                                                        ...(analysis.heroCopy || {}),
-                                                        // Specs 적용
-                                                        specColor: analysis.specs?.color || prev.heroTextContent?.specColor,
-                                                        specUpper: analysis.specs?.upper || prev.heroTextContent?.specUpper,
-                                                        specLining: analysis.specs?.lining || prev.heroTextContent?.specLining,
-                                                        specOutsole: analysis.specs?.outsole || prev.heroTextContent?.specOutsole,
-                                                        specOrigin: analysis.specs?.origin || prev.heroTextContent?.specOrigin,
-                                                        // Heel Height (Product Spec용)
-                                                        heelHeight: analysis.heelHeight || prev.heroTextContent?.heelHeight,
-                                                        // Height Spec 적용 (cm 형식)
-                                                        outsole: analysis.heightSpec?.outsole || prev.heroTextContent?.outsole || '3cm',
-                                                        insole: analysis.heightSpec?.insole || prev.heroTextContent?.insole || '0.5cm',
-                                                        totalHeight: analysis.heightSpec?.total || prev.heroTextContent?.totalHeight || '3.5cm',
-                                                        // Size Guide
-                                                        sizeGuide: analysis.sizeGuide || prev.heroTextContent?.sizeGuide
-                                                    };
-                                                }
-
-                                                // 2. Size Guide Image
-                                                if (results.sizeGuideImage) {
-                                                    // Ensure size-guide section exists
-                                                    if (!newSectionOrder.includes('size-guide')) {
-                                                        newSectionOrder.push('size-guide');
-                                                    }
-                                                    newData.detailTextContent = {
-                                                        ...prev.detailTextContent,
-                                                        sizeGuide: { visible: true }
-                                                    };
-                                                    newData.imageUrls['sizeGuide-0'] = results.sizeGuideImage;
-                                                }
-
-                                                // 3. AS Info
-                                                if (results.asInfo) {
-                                                    if (!newSectionOrder.includes('as-info')) {
-                                                        newSectionOrder.push('as-info');
-                                                    }
-                                                    newData.detailTextContent = { ...newData.detailTextContent, asInfo: true };
-                                                    newData.aiGeneratedContent = { ...prev.aiGeneratedContent, asInfo: results.asInfo };
-                                                }
-
-                                                // 4. Cautions
-                                                if (results.cautions) {
-                                                    if (!newSectionOrder.includes('precautions')) {
-                                                        newSectionOrder.push('precautions');
-                                                    }
-                                                    newData.detailTextContent = { ...newData.detailTextContent, precautions: true };
-                                                    newData.aiGeneratedContent = { ...newData.aiGeneratedContent, cautions: results.cautions };
-                                                }
-
-                                                // Sync sectionOrder state
-                                                setSectionOrder(newSectionOrder);
-
-                                                return { ...newData, sectionOrder: newSectionOrder };
-                                            });
-                                        });
-                                    });
-                                };
+                                reader.onloadend = () => resolve(reader.result as string);
+                                reader.onerror = reject;
                                 reader.readAsDataURL(blob);
                             });
+                        };
+
+                        // Get base64 and run analysis
+                        getBase64FromUrl(shoeUrl).then(base64 => {
+                            setQuickTransferProgress({ status: 'AI 제품 정밀 분석 중...', current: 0, total: 1 });
+
+                            import('./services/productAnalysisService').then(({ analyzeProductAndGenerate }) => {
+                                analyzeProductAndGenerate(base64, {
+                                    generateSizeGuide: true,
+                                    generateAS: true,
+                                    generateCautions: true
+                                }, (status) => {
+                                    console.log('Analysis status:', status);
+                                }).then(results => {
+                                    console.log('✅ Product Analysis Complete:', results);
+
+                                    setGeneratedData((prev: any) => {
+                                        const newData = { ...prev };
+                                        const newSectionOrder = [...(prev.sectionOrder || [])];
+
+                                        // 1. Hero Text & Info + Specs
+                                        if (results.analysisResult) {
+                                            const analysis = results.analysisResult;
+                                            newData.heroTextContent = {
+                                                ...prev.heroTextContent,
+                                                ...(analysis.heroCopy || {}),
+                                                // Specs 적용
+                                                specColor: analysis.specs?.color || prev.heroTextContent?.specColor,
+                                                specUpper: analysis.specs?.upper || prev.heroTextContent?.specUpper,
+                                                specLining: analysis.specs?.lining || prev.heroTextContent?.specLining,
+                                                specOutsole: analysis.specs?.outsole || prev.heroTextContent?.specOutsole,
+                                                specOrigin: analysis.specs?.origin || prev.heroTextContent?.specOrigin,
+                                                // Heel Height (Product Spec용)
+                                                heelHeight: analysis.heelHeight || prev.heroTextContent?.heelHeight,
+                                                // Height Spec 적용 (cm 형식)
+                                                outsole: analysis.heightSpec?.outsole || prev.heroTextContent?.outsole || '3cm',
+                                                insole: analysis.heightSpec?.insole || prev.heroTextContent?.insole || '0.5cm',
+                                                totalHeight: analysis.heightSpec?.total || prev.heroTextContent?.totalHeight || '3.5cm',
+                                                // Size Guide
+                                                sizeGuide: analysis.sizeGuide || prev.heroTextContent?.sizeGuide
+                                            };
+                                        }
+
+                                        // 2. Size Guide Image
+                                        if (results.sizeGuideImage) {
+                                            // Ensure size-guide section exists
+                                            if (!newSectionOrder.includes('size-guide')) {
+                                                newSectionOrder.push('size-guide');
+                                            }
+                                            newData.detailTextContent = {
+                                                ...prev.detailTextContent,
+                                                sizeGuide: { visible: true }
+                                            };
+                                            newData.imageUrls['sizeGuide-0'] = results.sizeGuideImage;
+                                        }
+
+                                        // 3. AS Info
+                                        if (results.asInfo) {
+                                            if (!newSectionOrder.includes('as-info')) {
+                                                newSectionOrder.push('as-info');
+                                            }
+                                            newData.detailTextContent = { ...newData.detailTextContent, asInfo: true };
+                                            newData.aiGeneratedContent = { ...prev.aiGeneratedContent, asInfo: results.asInfo };
+                                        }
+
+                                        // 4. Cautions
+                                        if (results.cautions) {
+                                            if (!newSectionOrder.includes('precautions')) {
+                                                newSectionOrder.push('precautions');
+                                            }
+                                            newData.detailTextContent = { ...newData.detailTextContent, precautions: true };
+                                            newData.aiGeneratedContent = { ...newData.aiGeneratedContent, cautions: results.cautions };
+                                        }
+
+                                        // Sync sectionOrder state
+                                        setSectionOrder(newSectionOrder);
+
+                                        return { ...newData, sectionOrder: newSectionOrder };
+                                    });
+                                });
+                            });
+                        }).catch(e => {
+                            console.error('Failed to get base64 from shoe URL:', e);
+                        });
                     }
 
                     // =============================================
@@ -514,9 +517,18 @@ export default function DetailGeneratorApp() {
                                 if ((shoe as any).file) {
                                     productFilesFromBlob.push((shoe as any).file);
                                 } else if (shoe.url) {
-                                    const response = await fetch(shoe.url);
-                                    const blob = await response.blob();
-                                    productFilesFromBlob.push(new File([blob], shoe.name || `product_${i + 1}.png`, { type: blob.type || 'image/png' }));
+                                    // Handle both Data URLs and Blob URLs
+                                    if (shoe.url.startsWith('data:')) {
+                                        // Convert Data URL to Blob then to File
+                                        const response = await fetch(shoe.url);
+                                        const blob = await response.blob();
+                                        productFilesFromBlob.push(new File([blob], shoe.name || `product_${i + 1}.png`, { type: blob.type || 'image/png' }));
+                                    } else {
+                                        // Fetch Blob URL
+                                        const response = await fetch(shoe.url);
+                                        const blob = await response.blob();
+                                        productFilesFromBlob.push(new File([blob], shoe.name || `product_${i + 1}.png`, { type: blob.type || 'image/png' }));
+                                    }
                                 }
                             } catch (e) { console.error('Error processing original shoe:', e); }
                         }

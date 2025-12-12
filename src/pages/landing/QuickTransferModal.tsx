@@ -238,7 +238,48 @@ export default function QuickTransferModal({ visible, onClose, onGenerate }: Qui
                 {/* Footer */}
                 <div style={{ borderTop: `1px solid ${colors.borderSoft}` }} className="p-6 flex gap-3">
                     <button onClick={onClose} style={{ flex: 1, padding: '14px 24px', background: 'transparent', border: `1px solid ${colors.borderSoft}`, borderRadius: 12, fontSize: 14, fontWeight: 500, color: colors.textPrimary }} className="hover:bg-gray-50">취소</button>
-                    <button onClick={() => onGenerate({ models: models.map(m => ({ name: m.file.name, url: m.preview })), shoes: shoes.map(s => ({ name: s.file.name, url: s.preview })), beautify, studio, modelCuts, closeupCuts, resolution, customBackground: customBackground?.preview })}
+                    <button onClick={async () => {
+                        // Convert Blob URLs to Base64 Data URLs before navigation
+                        // (Blob URLs become invalid after page navigation)
+                        const convertBlobToBase64 = async (blobUrl: string): Promise<string> => {
+                            if (blobUrl.startsWith('data:')) return blobUrl;
+                            try {
+                                const response = await fetch(blobUrl);
+                                const blob = await response.blob();
+                                return new Promise((resolve, reject) => {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => resolve(reader.result as string);
+                                    reader.onerror = reject;
+                                    reader.readAsDataURL(blob);
+                                });
+                            } catch (e) {
+                                console.error('Failed to convert blob to base64:', e);
+                                return blobUrl; // Fallback to original URL
+                            }
+                        };
+
+                        // Convert all previews to Base64
+                        const modelsWithBase64 = await Promise.all(models.map(async m => ({
+                            name: m.file.name,
+                            url: await convertBlobToBase64(m.preview)
+                        })));
+                        const shoesWithBase64 = await Promise.all(shoes.map(async s => ({
+                            name: s.file.name,
+                            url: await convertBlobToBase64(s.preview)
+                        })));
+                        const customBgBase64 = customBackground ? await convertBlobToBase64(customBackground.preview) : undefined;
+
+                        onGenerate({
+                            models: modelsWithBase64,
+                            shoes: shoesWithBase64,
+                            beautify,
+                            studio,
+                            modelCuts,
+                            closeupCuts,
+                            resolution,
+                            customBackground: customBgBase64
+                        });
+                    }}
                         disabled={!canGenerate}
                         style={{ flex: 1, padding: '14px 24px', background: canGenerate ? colors.accentPrimary : colors.borderSoft, color: canGenerate ? '#FFF' : colors.textMuted, borderRadius: 12, fontSize: 14, fontWeight: 500 }}
                         className="disabled:cursor-not-allowed">

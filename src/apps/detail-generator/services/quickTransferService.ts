@@ -1165,7 +1165,8 @@ black dot, dark spot, black mark, dark mark, corner dot, corner artifact, top-le
     try {
         const result = await callGeminiSecure(
             prompt,
-            [{ data: shoeBase64, mimeType: 'image/png' }]
+            [{ data: shoeBase64, mimeType: 'image/png' }],
+            { aspectRatio: '1:1' }  // Square format for product shots
         );
 
         if (result.type !== 'image') return null;
